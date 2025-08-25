@@ -44,6 +44,12 @@
 #include "ImuTypes.h"
 #include "Settings.h"
 
+#include "P2Fconverter.h"
+
+#include <apriltag.h>
+#include <apriltag_pose.h>
+#include "TagManager.h"
+
 
 namespace ORB_SLAM3
 {
@@ -134,6 +140,8 @@ public:
     void ActivateLocalizationMode();
     // This resumes local mapping thread and performs SLAM again.
     void DeactivateLocalizationMode();
+
+    void RequestActivateLocalizationMode();
 
     // Activate / DeActivate Loop Closure.
     void ActivateLC();
@@ -255,6 +263,7 @@ private:
     bool mbResetActiveMap;
 
     // Change mode flags
+    bool mbSwitchToLocalizationModeEnabled;
     std::mutex mMutexMode;
     bool mbActivateLocalizationMode;
     bool mbDeactivateLocalizationMode;
@@ -275,8 +284,16 @@ private:
     string mStrVocabularyFilePath;
 
     Settings* settings_;
+
+    //转化器
+    IdealPinhole2Fisheye P2Fconverter;
 };
 
+
 }// namespace ORB_SLAM
+
+// 新增tag：格式转化
+Eigen::Matrix3d toEigenR(const apriltag_pose_t& pose);
+Eigen::Vector3d toEigenT(const apriltag_pose_t& pose);
 
 #endif // SYSTEM_H

@@ -30,6 +30,8 @@
 #include "Settings.h"
 #include<pangolin/pangolin.h>
 
+#include "TagManager.h"
+
 #include<mutex>
 
 namespace ORB_SLAM3
@@ -53,8 +55,12 @@ public:
     void SetCurrentCameraPose(const Sophus::SE3f &Tcw);
     void SetReferenceKeyFrame(KeyFrame *pKF);
     void GetCurrentOpenGLCameraMatrix(pangolin::OpenGlMatrix &M, pangolin::OpenGlMatrix &MOw);
+    void DrawTags(bool bDrawTags, int maxTagId); // 新增函数
+    void SetTagSize(float size) { mTagSize = size; } // 可选：设置Tag显示大小
 
 private:
+
+    float mTagSize = 0.15;
 
     bool ParseViewerParamFile(cv::FileStorage &fSettings);
 

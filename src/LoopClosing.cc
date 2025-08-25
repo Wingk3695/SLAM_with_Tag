@@ -40,7 +40,7 @@ LoopClosing::LoopClosing(Atlas *pAtlas, KeyFrameDatabase *pDB, ORBVocabulary *pV
     mbResetRequested(false), mbResetActiveMapRequested(false), mbFinishRequested(false), mbFinished(true), mpAtlas(pAtlas),
     mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mpMatchedKF(NULL), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
     mbStopGBA(false), mpThreadGBA(NULL), mbFixScale(bFixScale), mnFullBAIdx(0), mnLoopNumCoincidences(0), mnMergeNumCoincidences(0),
-    mbLoopDetected(false), mbMergeDetected(false), mnLoopNumNotFound(0), mnMergeNumNotFound(0), mbActiveLC(bActiveLC)
+    mbLoopDetected(false), mbMergeDetected(false), mnLoopNumNotFound(0), mnMergeNumNotFound(0), mbActiveLC(bActiveLC), mpSystem(nullptr)
 {
     mnCovisibilityConsistencyTh = 3;
     mpLastCurrentKF = static_cast<KeyFrame*>(NULL);
@@ -234,7 +234,13 @@ void LoopClosing::Run()
 
                         Verbose::PrintMess("Merge finished!", Verbose::VERBOSITY_QUIET);
                     //}
-
+                    //调用system内定义的函数，在merge成功之后切换到定位模式
+                    if(mpSystem)
+                    {
+                        std::cout << "INFO: Map merge successful. Requesting to activate Localization Mode." << std::endl;
+                        mpSystem->RequestActivateLocalizationMode();
+                    }
+                    
                     vdPR_CurrentTime.push_back(mpCurrentKF->mTimeStamp);
                     vdPR_MatchedTime.push_back(mpMergeMatchedKF->mTimeStamp);
                     vnPR_TypeRecogn.push_back(1);
@@ -2416,6 +2422,11 @@ bool LoopClosing::isFinished()
 {
     unique_lock<mutex> lock(mMutexFinish);
     return mbFinished;
+}
+
+void LoopClosing::SetSystem(System* pSystem)
+{
+    mpSystem = pSystem;
 }
 
 

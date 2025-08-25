@@ -83,7 +83,8 @@ void TagStorage::tagWrite(int id,
 
 bool TagStorage::tagRead(int id,
                          Eigen::Matrix3d& R_w_tag_avg,
-                         Eigen::Vector3d& t_w_tag_avg)
+                         Eigen::Vector3d& t_w_tag_avg,
+                         bool cprint)
 {
     std::lock_guard<std::mutex> lock(mMutex);
 
@@ -148,7 +149,8 @@ bool TagStorage::tagRead(int id,
     // 求最大和平均
     double t_err_max = *std::max_element(errs.begin(), errs.end());
     double t_err_avg = std::accumulate(errs.begin(), errs.end(), 0.0) / errs.size();
-    cout<< "id：" << id << "最大误差：" << t_err_max << "m 平均误差：" << t_err_avg << "m\n";
+    if(cprint)
+        cout<< "id：" << id << "最大误差：" << t_err_max << "m 平均误差：" << t_err_avg << "m\n";
 
 
     R_w_tag_avg = q_avg.toRotationMatrix();

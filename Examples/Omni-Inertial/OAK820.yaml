@@ -8,10 +8,10 @@ File.version: "1.0"
 Camera.type: "KannalaBrandt8"
 
 # Left Camera calibration and distortion parameters (OpenCV) part1 cam1+
-Camera1.fx: 363.99671690664064
-Camera1.fy: 363.99671690664064
-Camera1.cx: 300.0
-Camera1.cy: 270.0
+Camera1.fx: 431.4035163337963
+Camera1.fy: 431.4035163337963
+Camera1.cx: 400.0
+Camera1.cy: 320.0
 
 # Kannala-Brandt distortion parameters
 Camera1.k1: 0.0
@@ -20,10 +20,10 @@ Camera1.k3: 0.0
 Camera1.k4: 0.0
 
 # Right Camera calibration and distortion parameters (OpenCV) part4 cam0+
-Camera2.fx: 363.99671690664064
-Camera2.fy: 363.99671690664064
-Camera2.cx: 300.0
-Camera2.cy: 270.0
+Camera2.fx: 431.4035163337963
+Camera2.fy: 431.4035163337963
+Camera2.cx: 400.0
+Camera2.cy: 320.0
 
 # Kannala-Brandt distortion parameters
 Camera2.k1: 0.0
@@ -32,10 +32,10 @@ Camera2.k3: 0.0
 Camera2.k4: 0.0
 
 # Side-Left Camera calibration and distortion parameters (OpenCV) part2 cam4+
-Camera3.fx: 229.18311805
-Camera3.fy: 229.33242302
-Camera3.cx: 300.0
-Camera3.cy: 270.0
+Camera3.fx: 431.4035163337963
+Camera3.fy: 431.4035163337963
+Camera3.cx: 400.0
+Camera3.cy: 320.0
 
 # KannalaBrandt8 distortion parameters
 Camera3.k1: 0.0
@@ -45,10 +45,10 @@ Camera3.k4: 0.0
 
 
 # Side-Right Camera calibration and distortion parameters (OpenCV) part3 cam3+
-Camera4.fx: 229.18311805
-Camera4.fy: 229.33242302
-Camera4.cx: 300.0
-Camera4.cy: 270.0
+Camera4.fx: 431.4035163337963
+Camera4.fy: 431.4035163337963
+Camera4.cx: 400.0
+Camera4.cy: 320.0
 
 # KannalaBrandt8 distortion parameters
 Camera4.k1: 0.0
@@ -56,32 +56,42 @@ Camera4.k2: 0.0
 Camera4.k3: 0.0
 Camera4.k4: 0.0
 
-# Transformation matrix from right camera to left camera (part4 to part1+)
+# Transformation matrix from right camera(cam2) to left camera(cam1) T12
 Stereo.T_c1_c2: !!opencv-matrix
   rows: 4
   cols: 4
   dt: f
-  data: [ 1,0,0, 0.108286166781855,
+  # data: [0.999997511073375,0.00219517700733487,-0.000392726747226024,0.103953906439619,
+  #        -0.00216475234710991,0.997852134803440,0.0654708136955491,4.11917125212047e-06,
+  #         0.000535607116321894,-0.0654698035109838,0.997854403800407,0.00142742845783503,
+  #         0, 0, 0, 1]
+  data: [1,0,0,0.103963706325943,
           0,1,0,0,
           0,0,1,0,
           0, 0, 0, 1]
+  # data:[0.99745669687728422,-0.07058340728448724,0.0099055777605219879,0.10286646,
+  #       0.071106656106182956,0.99499144061936351,-0.07025579372265893,0.015186000,
+  #      -0.0048970717836875951,0.0707814644544457,0.99747982584994144,-0.001464200,
+  #       0,0,0,1]
+  #0.103963706325943   0.1039637074285714
+          
 
 # Overlapping area between images (to be updated)
 Camera1.overlappingBegin: 0
-Camera1.overlappingEnd: 600
+Camera1.overlappingEnd: 800
 
 Camera2.overlappingBegin: 0
-Camera2.overlappingEnd: 600
+Camera2.overlappingEnd: 800
 
 Camera3.overlappingBegin: 0   #Left and Side Left
-Camera3.overlappingEnd: 600
+Camera3.overlappingEnd: 800
 
 Camera4.overlappingBegin: 0   #Right and Side Right
-Camera4.overlappingEnd: 600
+Camera4.overlappingEnd: 800
 
 # Camera resolution
-Camera.width: 600
-Camera.height: 540
+Camera.width: 800
+Camera.height: 640
 
 # Camera frames per second
 Camera.fps: 30
@@ -92,36 +102,39 @@ Camera.RGB: 1
 # Close/Far threshold. Baseline times.
 Stereo.ThDepth: 40.0
 
-# Transformation from body-frame (imu) to left camera   (imu to part1+)
+# Transformation from body-frame (imu) to left camera(cam1) T1i
 IMU.T_b_c1: !!opencv-matrix
    rows: 4
    cols: 4
    dt: f
-   data: [0.707106781186548,-0.707106781186548,0,-0.141421356237310, 
-          0.707106781186548,0.707106781186548,0,0,
-          0,0,1,0.0500000000000000,
+   data: [0.114231016301805,0.993206310623176,-0.0221921296970068,0.0497877567950165,
+          -0.993211587722873,0.114668296806666,0.0195429946626216,-0.0414113218872462,
+          0.0219549673800845,0.0198090631045180,0.999562695009609,0.00147976916156565,
           0, 0, 0, 1]
+          
 
-
-# Transformation from side-left camera to body-frame (imu)    (part2 to imu+)
+# Transformation from side-left camera to body-frame (imu)    (cam4 to imu) Ti4
 IMU.T_b_c3: !!opencv-matrix
   rows: 4
   cols: 4
   dt: f
-  data: [0,1,0,0.20,
-        -1,0,0,0.100000000000000,
-         0,0,1,0.050,
+  data: [-0.767632802883131,0.640823058436481,-0.00925676584450329,0.0359513192057337,
+         -0.640671890144583,-0.767668331141667,-0.0149954173244283,-0.0578663547255507,
+         -0.0167155351799906,-0.00558042456092952,0.999844712815629,-0.000442291222572506,
          0,0,0,1]
+        
 
-# Transformation from side-right camera to body-frame (imu)    (part3 to imu+)
+# Transformation from side-right camera to body-frame (imu)    (cam3 to imu) Ti3
 IMU.T_b_c4: !!opencv-matrix
   rows: 4
   cols: 4
   dt: f
-  data: [-1,0,0,0.200000000000000,
-         0,-1,0,-0.200000000000000,
-         0,0,1,0.0500000000000000,
+  data: [0.637029173803351,0.770787247755079,-0.00899168624718402,0.0458466702786707,
+        -0.770522697147381,0.637058379411302,0.0212460443981810,0.0440504536572505,
+         0.0221044091561620,-0.00660605177047934,0.999733842167936,0.000452213292060417,
          0,0,0,1]
+
+
 
 # IMU noise
 IMU.NoiseGyro: 0.000171 # 0.004 (VINS) # 0.00016 (TUM) # 0.00016    # rad/s^0.5
@@ -169,7 +182,14 @@ Viewer.imageViewScale: 0.8
 # Map Parameters
 #--------------------------------------------------------------------------------------------
 # If the LoadFile doesn't exist, the system give a message and create a new Atlas from scratch
-System.LoadAtlasFromFile: "moni_map1"
+System.LoadAtlasFromFile: "OAK19A_map"
 #
 # The store file is created from the current session, if a file with the same name exists it is deleted
-# System.SaveAtlasToFile: "moni_map1"
+# System.SaveAtlasToFile: "OAK19A_map"
+
+#--------------------------------------------------------------------------------------------
+# System Settings
+#--------------------------------------------------------------------------------------------
+# Activate Localization-Only mode automatically after a loop closure merge.
+# 1: true, 0: false.
+System.ActivateLocalizationAfterMerge: 0

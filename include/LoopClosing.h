@@ -39,6 +39,8 @@
 
 #include <condition_variable>
 
+class System;
+
 /******************************************************************************
 * Modified by:   Yifu Wang                                                    *
 * Contact:  1fwang927@gmail.com                                               *
@@ -100,6 +102,8 @@ public:
     void DeActivateLC();
 
     Viewer* mpViewer;
+
+    void SetSystem(System* pSystem);
 
 #ifdef REGISTER_TIMES
 
@@ -263,6 +267,7 @@ protected:
     int mnNumCorrection;
     int mnCorrectionGBA;
 
+    System* mpSystem;
 
     // To (de)activate LC
     bool mbActiveLC = true;

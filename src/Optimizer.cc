@@ -45,6 +45,9 @@
 
 #include "OptimizableTypes.h"
 
+#include "TagManager.h"
+#include "EdgeSE3Prior.h"
+
 
 namespace ORB_SLAM3
 {
@@ -1691,6 +1694,48 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
         }
     }
     num_edges = nEdges;
+
+
+    /****************** 在这里插入TAG约束代码 ******************/
+    auto& tagStorage = TagStorage::Instance();
+    for(KeyFrame* pKFi : lLocalKeyFrames) 
+    {
+        if(pKFi->GetMap() != pCurrentMap)
+            continue;
+        
+        auto tagObservations = tagStorage.GetObservationsForKF(pKFi->mnId);
+    
+        for(auto& [tagId, obsVec] : tagObservations) 
+        {
+            Eigen::Matrix3d R_w_tag;
+            Eigen::Vector3d t_w_tag;
+            if(!tagStorage.tagRead(tagId, R_w_tag, t_w_tag)) 
+                continue;
+        
+            g2o::SE3Quat T_w_tag(R_w_tag, t_w_tag);
+            g2o::SE3Quat T_cam_tag_measured(obsVec[0].R_cam_tag, obsVec[0].t_cam_tag);
+
+            auto* e = new g2o::EdgeSE3Prior();
+            e->setVertex(0, optimizer.vertex(pKFi->mnId));
+            e->setMeasurement(T_w_tag * T_cam_tag_measured.inverse());
+
+            int obsCount = tagStorage.GetObservationCount(tagId);
+            double weight = 10.0 * (1.0 - exp(-obsCount/5.0));
+            Eigen::Matrix<double,6,6> info = Eigen::Matrix<double,6,6>::Identity();
+            info.block<3,3>(0,0) *= 0.5 * weight;
+            info.block<3,3>(3,3) *= 1.0 * weight;
+            e->setInformation(info);
+
+            g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+            e->setRobustKernel(rk);
+            rk->setDelta(1.0);
+
+            optimizer.addEdge(e);
+            nEdges++;  // 更新边缘计数
+        }
+    }
+    num_edges = nEdges; // 更新最终计数 <-- 覆盖原有的num_edges赋值
+    /**********************************************************/
 
     if(pbStopFlag)
         if(*pbStopFlag)

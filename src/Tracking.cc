@@ -36,6 +36,8 @@
 
 #include <iostream>
 
+#include "TagManager.h"
+
 #include <mutex>
 #include <chrono>
 
@@ -2050,6 +2052,14 @@ void Tracking::Track()
 #endif
 
         // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
+
+        // 新增tag：取出 System 下发的 TagDetection
+        {
+            std::lock_guard<std::mutex> lk(mTagDetMutex);
+            mCurrentFrameTags = std::move(mTagDetBuf); // 零拷贝移动
+            mTagDetBuf.clear(); // 清空缓冲区
+        }
+
         if(!mbOnlyTracking)
         {
 
@@ -2062,17 +2072,25 @@ void Tracking::Track()
                 // Local Mapping might have changed some MapPoints tracked in last frame
                 CheckReplacedInLastFrame();
 
-                if((!mbVelocity && !pCurrentMap->isImuInitialized()) || mCurrentFrame.mnId<mnLastRelocFrameId+2)
-                {
-                    Verbose::PrintMess("TRACK: Track with respect to the reference KF ", Verbose::VERBOSITY_DEBUG);
-                    bOK = TrackReferenceKeyFrame();
-                }
-                else
-                {
-                    Verbose::PrintMess("TRACK: Track with motion model", Verbose::VERBOSITY_DEBUG);
-                    bOK = TrackWithMotionModel();
-                    if(!bOK)
+                // 新增：优先尝试Tag跟踪
+                bOK = TrackWithTag();
+                if(bOK)
+                    std::cout << "[Tag] Using TrackingWithTag " << endl;
+                if(!bOK){
+
+                    if((!mbVelocity && !pCurrentMap->isImuInitialized()) || mCurrentFrame.mnId<mnLastRelocFrameId+2)
+                    {
+                        Verbose::PrintMess("TRACK: Track with respect to the reference KF ", Verbose::VERBOSITY_DEBUG);
                         bOK = TrackReferenceKeyFrame();
+                    }
+                    else
+                    {
+                        Verbose::PrintMess("TRACK: Track with motion model", Verbose::VERBOSITY_DEBUG);
+                        bOK = TrackWithMotionModel();
+                        if(!bOK)
+                            bOK = TrackReferenceKeyFrame();
+                    }
+
                 }
 
 
@@ -2164,6 +2182,12 @@ void Tracking::Track()
             }
             else
             {
+            // 新增：优先尝试Tag跟踪
+            bOK = TrackWithTag();
+            if(bOK)
+                std::cout << "[Tag] Using TrackingWithTag " << endl;
+            if(!bOK){
+            
                 if(!mbVO)
                 {
                     // In last frame we tracked enough MapPoints in the map
@@ -2222,6 +2246,9 @@ void Tracking::Track()
 
                     bOK = bOKReloc || bOKMM;
                 }
+
+            }
+
             }
         }
 
@@ -3131,6 +3158,149 @@ bool Tracking::TrackWithMotionModel()
     return nmatchesMap>=10;
 }
 
+bool Tracking::TrackWithTag()
+{
+    // return false;
+    // 1. 获取当前帧Tag检测结果（线程安全）
+    std::vector<TagDetection> currentTags;
+    {
+        std::lock_guard<std::mutex> lock(mTagDetMutex);
+        currentTags = mCurrentFrameTags; // 拷贝（避免长时间持锁）
+    }
+    
+    // 2. 空结果立即返回失败
+    if (currentTags.empty()) {
+        return false;
+    }
+    ORBmatcher matcher(0.9,true);
+    // 3. 处理有效Tag做位姿平均
+    std::vector<Sophus::SE3f> vValidPoses;  // 存储所有有效位姿
+    std::vector<float> weights;//权重由观测次数
+    float totalWeight = 0.0f;
+    for (const auto& tag : currentTags) {
+        Eigen::Matrix3d R_w_tag;
+        Eigen::Vector3d t_w_tag;
+        
+        // 3.1 检查Tag是否在地图中
+        if (!TagStorage::Instance().tagRead(tag.id, R_w_tag, t_w_tag)) {
+            continue;
+        }
+        // 获取观测次数作为权重
+        int observationCount = TagStorage::Instance().GetObservationCount(tag.id);
+    
+        // 排除只观测一次的tag
+        if (observationCount <= 1) {
+            continue;
+        }
+
+
+        // 3.2 计算相机位姿
+        Sophus::SE3f T_world_tag(
+            R_w_tag.cast<float>(), 
+            t_w_tag.cast<float>()
+        );
+        Sophus::SE3f T_cam_tag(
+            tag.R_cam_tag.cast<float>(),
+            tag.t_cam_tag.cast<float>()
+        );
+        Sophus::SE3f T_cam_world = T_cam_tag * T_world_tag.inverse();
+        vValidPoses.push_back(T_cam_world);  // 保存有效位姿
+        weights.push_back(static_cast<float>(observationCount));
+        totalWeight += static_cast<float>(observationCount);
+    }
+    if(vValidPoses.empty()) 
+        return false;
+    // 3.3 用平均值更新当前帧位姿 Tcw
+    // Sophus::SE3f::Tangent sum = Sophus::SE3f::Tangent::Zero();  // 使用Tangent代替LieAlgebra
+    // for(auto& pose : vValidPoses) {
+    //     sum += pose.log();  // 累加李代数
+    // }
+    // mCurrentFrame.SetPose(Sophus::SE3f::exp(sum / vValidPoses.size()));  // 取平均
+    Sophus::SE3f::Tangent weightedSum = Sophus::SE3f::Tangent::Zero();
+    for(size_t i = 0; i < vValidPoses.size(); ++i) {
+        weightedSum += (weights[i] / totalWeight) * vValidPoses[i].log();  // 加权累加李代数
+    }
+    mCurrentFrame.SetPose(Sophus::SE3f::exp(weightedSum));  // 取加权平均
+
+
+
+    fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
+
+    // Project points seen in previous frame
+    int th;
+
+    if(mSensor==System::STEREO)
+        th=7;
+    else
+        th=15;
+
+    int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR || mSensor==System::IMU_MONOCULAR);
+
+    // If few matches, uses a wider window search
+    if(nmatches<20)
+    {
+        Verbose::PrintMess("Not enough matches, wider window search!!", Verbose::VERBOSITY_NORMAL);
+        fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
+
+        nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,2*th,mSensor==System::MONOCULAR || mSensor==System::IMU_MONOCULAR);
+        Verbose::PrintMess("Matches with wider search: " + to_string(nmatches), Verbose::VERBOSITY_NORMAL);
+
+    }
+
+    if(nmatches<20)
+    {
+        Verbose::PrintMess("Not enough matches!!", Verbose::VERBOSITY_NORMAL);
+        // if (mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD || mSensor == System::IMU_MULTI)
+        //     return true;
+        // else
+        return false;
+    }
+
+    // Optimize frame pose with all matches
+    Optimizer::PoseOptimization(&mCurrentFrame);
+
+    // Discard outliers
+    int nmatchesMap = 0;
+    for(int i =0; i<mCurrentFrame.N; i++)
+    {
+        if(mCurrentFrame.mvpMapPoints[i])
+        {
+            if(mCurrentFrame.mvbOutlier[i])
+            {
+                MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
+
+                mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
+                mCurrentFrame.mvbOutlier[i]=false;
+                if (i < mCurrentFrame.Nleft)
+                    pMP->mbTrackInView = false;
+                else if (i < mCurrentFrame.Nleft + mCurrentFrame.Nright && i >= mCurrentFrame.Nleft)
+                    pMP->mbTrackInViewR = false;
+                else if (i < mCurrentFrame.Nleft + mCurrentFrame.Nright + mCurrentFrame.Nsideleft && i >= mCurrentFrame.Nleft + mCurrentFrame.Nright)
+                    pMP->mbTrackInViewSL = false;
+                else
+                    pMP->mbTrackInViewSR = false;
+
+                pMP->mnLastFrameSeen = mCurrentFrame.mnId;
+                nmatches--;
+            }
+            else if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
+                nmatchesMap++;
+        }
+    }
+
+    if(mbOnlyTracking)
+    {
+        mbVO = nmatchesMap<10;
+        return nmatches>20;
+    }
+
+    // if (mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD || mSensor == System::IMU_MULTI)
+    //     return true;
+    // else
+    // std::cout << "[Tag] Using TrackingWithTag " << endl;
+    return nmatchesMap>=20;
+}
+
 bool Tracking::TrackLocalMap()
 {
 
@@ -3398,6 +3568,13 @@ bool Tracking::NeedNewKeyFrame()
         return false;
 }
 
+//新增tag：接收tag信息
+void Tracking::SetTagDetections(const std::vector<TagDetection>& vD) {
+    std::lock_guard<std::mutex> lk(mTagDetMutex);
+    //mTagDetBuf = vD;
+    mTagDetBuf = std::move(vD);
+}
+
 void Tracking::CreateNewKeyFrame()
 {
     if(mpLocalMapper->IsInitializing() && !mpAtlas->isImuInitialized())
@@ -3515,6 +3692,25 @@ void Tracking::CreateNewKeyFrame()
             //Verbose::PrintMess("new mps for stereo KF: " + to_string(nPoints), Verbose::VERBOSITY_NORMAL);
         }
     }
+
+    // 转成 TagObs 并写入 TagStorage
+    for(const auto& d : mCurrentFrameTags){
+        TagStorage::TagObs o;
+        o.pKF        = pKF;        // 绑定到本次新建的 KeyFrame
+        o.R_cam_tag  = d.R_cam_tag;
+        o.t_cam_tag  = d.t_cam_tag;
+        TagStorage::Instance().tagWrite(
+            d.id,
+            o.pKF,
+            o.R_cam_tag,
+            o.t_cam_tag
+        );
+        cout << "存Tag";
+        cout << d.id;
+        cout << endl;
+    }
+    mCurrentFrameTags.clear();
+    //新增：tag检测end
 
 
     mpLocalMapper->InsertKeyFrame(pKF);

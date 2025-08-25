@@ -204,9 +204,10 @@ void Viewer::Run()
                 );
 
     // Add named OpenGL viewport to window and provide 3D Handler
+    pangolin::Handler3D* handler = new pangolin::Handler3D(s_cam, pangolin::AxisNone, 5.0f, 2.0f);
     pangolin::View& d_cam = pangolin::CreateDisplay()
             .SetBounds(0.0, 1.0, pangolin::Attach::Pix(175), 1.0, -1024.0f/768.0f)
-            .SetHandler(new pangolin::Handler3D(s_cam));
+            .SetHandler(handler);
 
     pangolin::OpenGlMatrix Twc, Twr;
     Twc.SetIdentity();
@@ -276,12 +277,12 @@ void Viewer::Run()
             s_cam.Follow(Twc);
         }
 
-        if(menuTopView && mpMapDrawer->mpAtlas->isImuInitialized())//用不了
+        if(menuTopView)//用不了
         {
             menuTopView = false;
             bCameraView = false;
             s_cam.SetProjectionMatrix(pangolin::ProjectionMatrix(1024,768,3000,3000,512,389,0.1,10000));
-            s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(0,0.01,50, 0,0,0,0.0,0.0, 1.0));
+            s_cam.SetModelViewMatrix(pangolin::ModelViewLookAt(0,-30,0.01, 0,0,0,0.0,0.0, 1.0));
             s_cam.Follow(Ow);
         }
 
@@ -327,6 +328,8 @@ void Viewer::Run()
             mpMapDrawer->DrawKeyFrames(menuShowKeyFrames,menuShowGraph, menuShowInertialGraph, menuShowOptLba);
         if(menuShowPoints)
             mpMapDrawer->DrawMapPoints();
+
+        mpMapDrawer->DrawTags(true, 20); // 参数：是否绘制, 最大Tag ID
 
         if(menuEnableLeftCam)
             mpTracker->mbleft = true;

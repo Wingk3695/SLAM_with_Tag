@@ -43,6 +43,8 @@
 
 #include "GeometricCamera.h"
 
+#include "TagManager.h"
+
 #include <mutex>
 #include <unordered_set>
 
@@ -120,6 +122,15 @@ public:
     bool stopRequested();
 #endif
 
+    // 新增Tag：临时结构体，只在 System→Tracking 之间传输
+    struct TagDetection {
+        int             id;
+        Eigen::Matrix3d R_cam_tag;
+        Eigen::Vector3d t_cam_tag;
+    };
+    // 新增Tag：用于 System::trackmono下发检测结果供保存
+    void SetTagDetections(const std::vector<TagDetection>& vD);
+
 public:
 
     // Tracking states
@@ -144,6 +155,8 @@ public:
     Frame mLastFrame;
 
     cv::Mat mImGray;
+    //新增：供Tag检测的缓存灰度图
+    cv::Mat mGrayBuf4det;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
@@ -219,6 +232,7 @@ protected:
     bool TrackReferenceKeyFrame();
     void UpdateLastFrame();
     bool TrackWithMotionModel();
+    bool TrackWithTag();
     bool PredictStateIMU();
 
     bool Relocalization();
@@ -379,6 +393,11 @@ protected:
     bool mbNotStop;
     std::mutex mMutexStop;
 #endif
+
+    //新增tag：
+    std::vector<TagDetection> mTagDetBuf;
+    std::mutex                mTagDetMutex;
+    std::vector<TagDetection> mCurrentFrameTags;
 
 public:
     cv::Mat mImLeft, mImRight, mImSideLeft, mImSideRight;

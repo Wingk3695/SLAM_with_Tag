@@ -1118,7 +1118,7 @@ void Frame::ComputeStereoMatches()
         }
     }
     // 调试
-    cout<<"\n初次匹配点数："<<vDistIdx.size();
+    //cout<<"\n初次匹配点数："<<vDistIdx.size();
     sort(vDistIdx.begin(),vDistIdx.end());
     const float median = vDistIdx[vDistIdx.size()/2].first;
     const float thDist = 1.5f*1.4f*median;
@@ -1140,7 +1140,7 @@ void Frame::ComputeStereoMatches()
         if(mvuRight[i] != -1)
             nValidMatches++;
     }
-    std::cout << "\n有效匹配点数：" << nValidMatches << std::endl;
+    //std::cout << "\n有效匹配点数：" << nValidMatches << std::endl;
 }
 
 
@@ -1385,6 +1385,7 @@ void Frame::ComputeMultiFishEyeMatches() {
                 }
             }
         }
+        //cout << nMatches << endl;
     }
     else{
         mvLeftToRightMatch = vector<int>(Nleft,-1);
@@ -1395,6 +1396,7 @@ void Frame::ComputeMultiFishEyeMatches() {
         mnCloseMPs = 0;
         return;
     }
+    
 
 }
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.10)
 project(Sophus VERSION 1.1.0)
 
 include(CMakePackageConfigHelpers)
@@ -32,7 +32,8 @@ ENDIF()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules")
 
 # Find Eigen 3 (dependency)
-find_package(Eigen3 3.3.0 REQUIRED)
+set(Eigen3_DIR "/usr/local/share/eigen3/cmake")
+FIND_PACKAGE(Eigen3 3.3.0 REQUIRED)
 
 # Define interface library target
 add_library(sophus INTERFACE)

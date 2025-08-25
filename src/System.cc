@@ -36,6 +36,18 @@
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 
+#include <apriltag.h>
+#include <apriltag_pose.h>
+#include "TagManager.h"
+
+#include "P2Fconverter.h"
+
+double tag_size = 0.12;
+double fx = 350.0; 
+double fy = 350.0;
+double cx = 500.0;
+double cy = 400.0;
+
 namespace ORB_SLAM3
 {
 
@@ -44,7 +56,7 @@ Verbose::eLevel Verbose::th = Verbose::VERBOSITY_NORMAL;
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
                const bool bUseViewer, const int initFr, const string &strSequence):
     mSensor(sensor), mpViewer(static_cast<Viewer*>(NULL)), mbReset(false), mbResetActiveMap(false),
-    mbActivateLocalizationMode(false), mbDeactivateLocalizationMode(false), mbShutDown(false)
+    mbActivateLocalizationMode(false), mbDeactivateLocalizationMode(false), mbShutDown(false),P2Fconverter()
 {
     // Output welcome message
     cout << endl <<
@@ -101,6 +113,35 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         {
             mStrSaveAtlasToFile = (string)node;
         }
+    }
+
+    mbSwitchToLocalizationModeEnabled = false; 
+    try
+    {
+        // OpenCV FileStorage reads boolean true as 1 and false as 0.
+        cv::FileNode node = fsSettings["System.ActivateLocalizationAfterMerge"];
+        int val = 0;
+        if(!node.empty() && node.isInt())
+        {
+            val = (int)node;
+            std::cout << "[System] INFO: 'System.ActivateLocalizationAfterMerge' found in settings file with value " << val << "." << std::endl;
+            //
+        }
+        
+        if (val != 0)
+        {
+            mbSwitchToLocalizationModeEnabled = true;
+            std::cout << "[System] INFO: Auto-switching to Localization Mode is ENABLED in settings." << std::endl;
+        }
+        else
+        {
+            std::cout << "[System] INFO: Auto-switching to Localization Mode is DISABLED in settings." << std::endl;
+        }
+    }
+    catch (const cv::Exception& e)
+    {
+        std::cout << "[System] ERROR: Exception while reading 'System.ActivateLocalizationAfterMerge' from settings file: " << e.what() << std::endl;
+        std::cerr << "[System] WARNING: 'System.ActivateLocalizationAfterMerge' not found in settings file. Defaulting to DISABLED." << std::endl;
     }
 
     node = fsSettings["loopClosing"];
@@ -218,6 +259,8 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC); // mSensor!=MONOCULAR);
     mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
 
+    mpLoopCloser->SetSystem(this); // <--- 添加这一行，将System自身的指针传进去
+
     //Set pointers between threads
     mpTracker->SetLocalMapper(mpLocalMapper);
     mpTracker->SetLoopClosing(mpLoopCloser);
@@ -243,6 +286,13 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     // Fix verbosity
     Verbose::SetTh(Verbose::VERBOSITY_QUIET);
+    
+    //新增 tag 鱼眼转化器
+    P2Fconverter.init(Size(1000, 800),  // 针孔图像尺寸
+                  Size(800, 640),   // 鱼眼图像尺寸
+                  85.0f,           // 鱼眼FOV (度)
+                  fx, fy, cx, cy,
+                  Mat::eye(3, 3, CV_32F)); // 内参
 }
 
 Sophus::SE3f System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
@@ -401,9 +451,68 @@ Sophus::SE3f System::TrackMulti(const cv::Mat &imLeft, const cv::Mat &imRight, c
         }
     }
 
-    // if (mSensor == System::IMU_MULTI)
-    //     for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
-    //         mpTracker->GrabImuData(vImuMeas[i_imu]);
+    //新增：tag检测begin 只检测一个
+    cv::Mat img4detect;
+    if (imLeft.channels() == 3)
+        cv::cvtColor(imLeft, img4detect, cv::COLOR_BGR2GRAY);
+    else
+        img4detect = imLeft;
+    image_u8_t img4det = {img4detect.cols, img4detect.rows, img4detect.cols, img4detect.data};
+    
+    apriltag_detector_t* detector = TagStorage::Instance().GetDetector();
+    
+    zarray_t* detections = apriltag_detector_detect(detector, &img4det);
+    apriltag_pose_t pose;
+    std::vector<Tracking::TagDetection> vD;
+    // Process detections
+    for (int i = 0; i < zarray_size(detections); i++) {
+        apriltag_detection_t* det;
+        zarray_get(detections, i, &det);
+
+        // Get the id of the detected tag
+        int tag_id = det->id;
+        //cout << "ID: " << det->id << ":\n";
+
+        apriltag_detection_info_t info = {det,tag_size,fx,fy,cx,cy};
+        estimate_tag_pose(&info, &pose);
+        Tracking::TagDetection dettemp;
+        dettemp.id          = det->id;
+        dettemp.R_cam_tag   = toEigenR(pose);
+        dettemp.t_cam_tag   = toEigenT(pose);//格式统一
+        vD.push_back(dettemp);
+    }
+    mpTracker->SetTagDetections(vD);
+    apriltag_detections_destroy(detections);
+    //新增：tag检测end
+
+    //此处针孔转鱼眼
+    // imLeftToFeed = P2Fconverter.convert(imLeftToFeed, cv::INTER_LINEAR);
+    // imRightToFeed = P2Fconverter.convert(imRightToFeed, cv::INTER_LINEAR);
+    // imSideLeftToFeed = P2Fconverter.convert(imSideLeftToFeed, cv::INTER_LINEAR);
+    // imSideRightToFeed = P2Fconverter.convert(imSideRightToFeed, cv::INTER_LINEAR);
+    cv::Mat result1, result2, result3, result4;
+    std::thread t1([&]() {
+        result1 = P2Fconverter.convert(imLeftToFeed, cv::INTER_LINEAR);
+    });
+    std::thread t2([&]() {
+        result2 = P2Fconverter.convert(imRightToFeed, cv::INTER_LINEAR);
+    });
+    std::thread t3([&]() {
+        result3 = P2Fconverter.convert(imSideLeftToFeed, cv::INTER_LINEAR);
+    });
+    std::thread t4([&]() {
+        result4 = P2Fconverter.convert(imSideRightToFeed, cv::INTER_LINEAR);
+    });
+
+    t1.join();
+    t2.join();
+    t3.join();
+    t4.join();
+
+    imLeftToFeed = result1;
+    imRightToFeed = result2;
+    imSideLeftToFeed = result3;
+    imSideRightToFeed = result4;
 
     Sophus::SE3f Twb = mpTracker->GrabImageMulti(imLeftToFeed,imRightToFeed,imSideLeftToFeed,imSideRightToFeed,timestamp,filename);
 
@@ -1627,5 +1736,46 @@ string System::CalculateCheckSum(string filename, int type)
     return checksum;
 }
 
+void System::RequestActivateLocalizationMode()
+{
+    std::cout << "[System] INFO: Got a request to activate localization mode." << std::endl;
+
+    // First, check if this feature is enabled in the configuration file.
+    if (!mbSwitchToLocalizationModeEnabled)
+    {
+        std::cout << "[System] INFO: Request ignored, as 'System.ActivateLocalizationAfterMerge' is not enabled in settings." << std::endl;
+        return; // 直接返回，不执行任何操作
+    }
+
+    // If the feature is enabled, proceed with setting the request flag.
+    std::unique_lock<std::mutex> lock(mMutexMode);
+    mbActivateLocalizationMode = true; // 设置“激活定位模式”的请求
+    std::cout << "[System] SUCCESS: A request to activate localization mode has been accepted and queued." << std::endl;
+}
+
 } //namespace ORB_SLAM
 
+// 新增tag：格式转化 pose 是 apriltag_pose_t，R 是 3×3，t 是 3×1
+Eigen::Matrix3d toEigenR(const apriltag_pose_t& pose) {
+    assert(pose.R && "pose.R 不能为空");
+    assert(pose.R->nrows == 3 && pose.R->ncols == 3);
+    Eigen::Matrix3d R;
+    for (unsigned int i = 0; i < 3; ++i) {
+        for (unsigned int j = 0; j < 3; ++j) {
+            // 行优先布局：索引 = i * 列数 + j
+            R(i, j) = pose.R->data[i * pose.R->ncols + j];
+        }
+    }
+    return R;
+}
+
+Eigen::Vector3d toEigenT(const apriltag_pose_t& pose) {
+    assert(pose.t && "pose.t 不能为空");
+    assert(pose.t->nrows == 3 && pose.t->ncols == 1);
+    Eigen::Vector3d t;
+    for (unsigned int i = 0; i < 3; ++i) {
+        // data 存储为 3×1，列数为 1
+        t(i) = pose.t->data[i * pose.t->ncols];
+    }
+    return t;
+}

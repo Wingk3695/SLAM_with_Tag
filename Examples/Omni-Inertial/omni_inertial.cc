@@ -8,10 +8,18 @@
 
 #include <opencv2/core/core.hpp>
 
+#include <thread>
+#include <chrono>
 
 #include<System.h>
 #include "ImuTypes.h"
 #include "Optimizer.h"
+
+#include <apriltag.h>
+#include <apriltag_pose.h>
+#include <tag36h11.h>
+#include "TagManager.h"
+#include <Eigen/Core>
 
 using namespace std;
 
@@ -222,7 +230,17 @@ int main(int argc, char **argv)
 
     }
     // Stop all threads
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     SLAM.Shutdown();
+
+    Eigen::Matrix3d aaaaa;
+    Eigen::Vector3d bbbbb;
+    TagStorage::Instance().tagCleanup();
+    cout << "-------" << endl;
+    for (int i = 0; i <= 20; i++) {
+    TagStorage::Instance().tagRead(i, aaaaa, bbbbb, true);
+    cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
+}
 
 
     // Save camera trajectory

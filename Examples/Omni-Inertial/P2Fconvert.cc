@@ -48,10 +48,10 @@ public:
                 float ny = (y - fish_center_y) / radius;
                 
                 float r = sqrt(nx*nx + ny*ny);
-                if (r > 1.0f) {
-                    valid_mask.at<uchar>(y, x) = 0;
-                    continue;
-                }
+                // if (r > 1.0f) {
+                //     valid_mask.at<uchar>(y, x) = 0;
+                //     continue;
+                // }
 
                 // 2. 转换为3D单位向量 (等距投影模型)
                 float theta = r * fish_fov_rad * 0.5f;
@@ -130,40 +130,36 @@ public:
 // 示例使用
 int main() {
     // 1. 设置相机参数（理想模型）
-    float fx = 800.0f, fy = 800.0f;  // 焦距
-    float cx = 320.0f, cy = 240.0f;   // 光心
+    float fx = 262.51551819f, fy = 262.51551819f;  // 焦距
+    float cx = 318.28943253f, cy = 254.40927315f;   // 光心
 
     // 2. 初始化转换器
     IdealPinhole2Fisheye converter;
     converter.init(Size(640, 480),  // 针孔图像尺寸
-                  Size(600, 600),   // 鱼眼图像尺寸
-                  180.0f,           // 鱼眼FOV (度)
+                  Size(600, 540),   // 鱼眼图像尺寸
+                  85.0f,           // 鱼眼FOV (度)
                   fx, fy, cx, cy); // 内参
 
     // 3. 实时处理示例
-    VideoCapture cap(0); // 摄像头
-    if (!cap.isOpened()) return -1;
+    Mat img = cv::imread("./imgPinhole4F.png",cv::IMREAD_UNCHANGED);
 
     Mat frame, fish_eye;
-    while (true) {
-        cap >> frame;
-        if (frame.empty()) break;
+    frame = img;
 
-        // 转换并测量耗时
-        auto t1 = chrono::high_resolution_clock::now();
-        fish_eye = converter.convert(frame);
-        auto t2 = chrono::high_resolution_clock::now();
+    // 转换并测量耗时
+    auto t1 = chrono::high_resolution_clock::now();
+    fish_eye = converter.convert(frame);
+    auto t2 = chrono::high_resolution_clock::now();
         
-        // 显示结果
-        imshow("Pinhole", frame);
-        imshow("Fisheye", fish_eye);
+    // 显示结果
+    imwrite("Pinhole.png", frame);
+    imwrite("Fisheye.png", fish_eye);
         
-        // 打印处理时间（毫秒）
-        cout << "Process time: " 
-             << chrono::duration_cast<chrono::milliseconds>(t2 - t1).count() 
-             << "ms" << endl;
+    // 打印处理时间（毫秒）
+    cout << "Process time: " 
+        << chrono::duration_cast<chrono::milliseconds>(t2 - t1).count() 
+        << "ms" << endl;
 
-        if (waitKey(10) == 27) break; // ESC退出
-    }
+    
     return 0;
 }
