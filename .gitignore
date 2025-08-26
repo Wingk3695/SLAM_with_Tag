@@ -82,6 +82,8 @@ TrackingTimeStats.txt
 time*
 Time*
 
+tag_poses.txt
+
 !Thirdparty/DBoW2/Dutils/
 !Thirdparty/g2o/g2o/stuff/
 !Thirdparty/apriltag/common/time_util.c

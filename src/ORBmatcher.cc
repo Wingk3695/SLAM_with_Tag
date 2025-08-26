@@ -2398,7 +2398,6 @@ namespace ORB_SLAM3
     {
         int nmatches = 0;
 
-
         // Rotation Histogram (to check rotation consistency)
         vector<int> rotHist[HISTO_LENGTH];
         for(int i=0;i<HISTO_LENGTH;i++)
@@ -2461,31 +2460,31 @@ namespace ORB_SLAM3
                 }
 
                 // Project
-                    Eigen::Vector3f x3Dw = pMP->GetWorldPos();
-                    Eigen::Vector3f x3Dc = Tcw * x3Dw;
+                Eigen::Vector3f x3Dw = pMP->GetWorldPos();
+                Eigen::Vector3f x3Dc = Tcw_cam * x3Dw;
 
                 // Depth must be positive
                 if(x3Dc.z() < 0.0f)
                     continue;
-                const Eigen::Vector2f uv = pCamera_cam->project(x3Dc);
 
+                const Eigen::Vector2f uv = pCamera_cam->project(x3Dc);
 
                 // Point must be inside the image boundaries (using main camera's boundaries for all)
                 if(uv(0) < CurrentFrame.mnMinX || uv(0) > CurrentFrame.mnMaxX || uv(1) < CurrentFrame.mnMinY || uv(1) > CurrentFrame.mnMaxY)
                     continue;
 
-                    // Compute predicted scale level
-                    Eigen::Vector3f PO = x3Dw - Ow_cam;
-                    float dist3D = PO.norm();
+                // Compute predicted scale level
+                Eigen::Vector3f PO = x3Dw - Ow_cam;
+                float dist3D = PO.norm();
 
-                    const float maxDistance = pMP->GetMaxDistanceInvariance();
-                    const float minDistance = pMP->GetMinDistanceInvariance();
+                const float maxDistance = pMP->GetMaxDistanceInvariance();
+                const float minDistance = pMP->GetMinDistanceInvariance();
 
-                    // Depth must be inside the scale pyramid of the image
-                    if(dist3D < minDistance || dist3D > maxDistance)
-                        continue;
+                // Depth must be inside the scale pyramid of the image
+                if(dist3D < minDistance || dist3D > maxDistance)
+                    continue;
 
-                    int nPredictedLevel = pMP->PredictScale(dist3D, &CurrentFrame);
+                int nPredictedLevel = pMP->PredictScale(dist3D, &CurrentFrame);
 
                 // Search in a window
                 const float radius = th * CurrentFrame.mvScaleFactors[nPredictedLevel];
@@ -2584,7 +2583,7 @@ namespace ORB_SLAM3
 
         return nmatches;
     }
-
+    
     void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3)
     {
         int max1=0;

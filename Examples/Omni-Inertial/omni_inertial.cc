@@ -241,6 +241,7 @@ int main(int argc, char **argv)
     TagStorage::Instance().tagRead(i, aaaaa, bbbbb, true);
     cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
 }
+TagStorage::Instance().tagSave();
 
 
     // Save camera trajectory
