@@ -81,6 +81,9 @@ TrackLocalMapStats.txt
 TrackingTimeStats.txt
 time*
 Time*
+
+!Thirdparty/DBoW2/Dutils/
+
 Table_Euroc
 Table_TUMVI_rooms/
 *.pyc
