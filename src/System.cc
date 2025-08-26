@@ -452,39 +452,86 @@ Sophus::SE3f System::TrackMulti(const cv::Mat &imLeft, const cv::Mat &imRight, c
     }
 
     //新增：tag检测begin 只检测一个
-    cv::Mat img4detect;
-    if (imLeft.channels() == 3)
-        cv::cvtColor(imLeft, img4detect, cv::COLOR_BGR2GRAY);
-    else
-        img4detect = imLeft;
-    image_u8_t img4det = {img4detect.cols, img4detect.rows, img4detect.cols, img4detect.data};
+    // cv::Mat img4detect;
+    // if (imLeft.channels() == 3)
+    //     cv::cvtColor(imLeft, img4detect, cv::COLOR_BGR2GRAY);
+    // else
+    //     img4detect = imLeft;
+    // image_u8_t img4det = {img4detect.cols, img4detect.rows, img4detect.cols, img4detect.data};
     
-    apriltag_detector_t* detector = TagStorage::Instance().GetDetector();
+    // apriltag_detector_t* detector = TagStorage::Instance().GetDetector();
     
-    zarray_t* detections = apriltag_detector_detect(detector, &img4det);
-    apriltag_pose_t pose;
-    std::vector<Tracking::TagDetection> vD;
-    // Process detections
-    for (int i = 0; i < zarray_size(detections); i++) {
-        apriltag_detection_t* det;
-        zarray_get(detections, i, &det);
+    // zarray_t* detections = apriltag_detector_detect(detector, &img4det);
+    // apriltag_pose_t pose;
+    // std::vector<Tracking::TagDetection> vD;
+    // // Process detections
+    // for (int i = 0; i < zarray_size(detections); i++) {
+    //     apriltag_detection_t* det;
+    //     zarray_get(detections, i, &det);
 
-        // Get the id of the detected tag
-        int tag_id = det->id;
-        //cout << "ID: " << det->id << ":\n";
+    //     // Get the id of the detected tag
+    //     int tag_id = det->id;
+    //     //cout << "ID: " << det->id << ":\n";
 
-        apriltag_detection_info_t info = {det,tag_size,fx,fy,cx,cy};
-        estimate_tag_pose(&info, &pose);
-        Tracking::TagDetection dettemp;
-        dettemp.id          = det->id;
-        dettemp.R_cam_tag   = toEigenR(pose);
-        dettemp.t_cam_tag   = toEigenT(pose);//格式统一
-        vD.push_back(dettemp);
-    }
-    mpTracker->SetTagDetections(vD);
-    apriltag_detections_destroy(detections);
+    //     apriltag_detection_info_t info = {det,tag_size,fx,fy,cx,cy};
+    //     estimate_tag_pose(&info, &pose);
+    //     Tracking::TagDetection dettemp;
+    //     dettemp.id          = det->id;
+    //     dettemp.R_cam_tag   = toEigenR(pose);
+    //     dettemp.t_cam_tag   = toEigenT(pose);//格式统一
+    //     vD.push_back(dettemp);
+    // }
+    // mpTracker->SetTagDetections(vD);
+    // apriltag_detections_destroy(detections);
     //新增：tag检测end
+    // 并行检测
+    std::vector<cv::Mat> images = {imLeft, imRight, imSideLeft, imSideRight};
+    std::vector<std::vector<Tracking::TagDetection>> allDetections(4);
+    std::vector<std::thread> threads;
 
+    for (int i = 0; i < 4; i++) {
+        threads.emplace_back([&, i]() {
+            cv::Mat img4detect;
+            if (images[i].channels() == 3)
+                cv::cvtColor(images[i], img4detect, cv::COLOR_BGR2GRAY);
+            else
+                img4detect = images[i];
+        
+            image_u8_t img4det = {img4detect.cols, img4detect.rows, img4detect.cols, img4detect.data};
+        
+            //apriltag_detector_t* detector = TagStorage::Instance().GetDetector();
+            apriltag_detector_t* detector = TagStorage::Instance().GetThreadDetector(i);
+            zarray_t* detections = apriltag_detector_detect(detector, &img4det);
+        
+            std::vector<Tracking::TagDetection> vD;
+            for (int j = 0; j < zarray_size(detections); j++) {
+                apriltag_detection_t* det;
+                zarray_get(detections, j, &det);
+
+                apriltag_pose_t pose;
+                apriltag_detection_info_t info = {det, tag_size, fx, fy, cx, cy};
+                estimate_tag_pose(&info, &pose);
+            
+                Tracking::TagDetection dettemp;
+                dettemp.id          = det->id;
+                dettemp.R_cam_tag   = toEigenR(pose);
+                dettemp.t_cam_tag   = toEigenT(pose);
+                dettemp.camID = i;
+                vD.push_back(dettemp);
+            }
+        
+            allDetections[i] = vD;
+            apriltag_detections_destroy(detections);
+        });
+    }
+
+    for (auto& thread : threads) {
+        thread.join();
+    }
+    for (int i = 0; i < 4; i++) {
+        mpTracker->SetTagDetections(allDetections[i]);
+    }
+    
     //此处针孔转鱼眼
     // imLeftToFeed = P2Fconverter.convert(imLeftToFeed, cv::INTER_LINEAR);
     // imRightToFeed = P2Fconverter.convert(imRightToFeed, cv::INTER_LINEAR);

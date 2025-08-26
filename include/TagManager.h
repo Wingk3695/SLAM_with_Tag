@@ -28,18 +28,24 @@ public:
     // 销毁检测器与 TagFamily
     void DestroyDetector();
 
+    apriltag_detector_t* GetThreadDetector(int thread_id); // 获取线程专用检测器
+    void InitDetectorPool(int pool_size = 4); // 初始化检测器池
+    void DestroyDetectorPool(); // 销毁检测器池
+
     // 一次观测结构
     struct TagObs {
         ORB_SLAM3::KeyFrame* pKF;
         Eigen::Matrix3d R_cam_tag;
         Eigen::Vector3d t_cam_tag;
+        int camID = 0;
     };
 
     // 写入：Tag观测记录
     void tagWrite(int id,
                   ORB_SLAM3::KeyFrame* pKF,
                   const Eigen::Matrix3d R_cam_tag,
-                  const Eigen::Vector3d t_cam_tag);
+                  const Eigen::Vector3d t_cam_tag,
+                  int camID = 0);
 
     // 读取：
     // 未载入：观测记录的Rt是相机坐标系，需要利用pKF对应的位姿转化到世界坐标系，计算平均的世界坐标系下 R/t并更新到mStorageRt
@@ -71,6 +77,8 @@ private:
     ~TagStorage();
     TagStorage(const TagStorage&) = delete;
     TagStorage& operator=(const TagStorage&) = delete;
+    
+    std::vector<apriltag_detector_t*> mDetectorPool; // 检测器池
 
     // 观测记录存储
     std::map<int, std::vector<TagObs>> mStorage;

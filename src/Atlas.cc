@@ -30,30 +30,10 @@ Atlas::Atlas(){
     mpCurrentMap = static_cast<Map*>(NULL);
 }
 
-Atlas::Atlas(int initKFid, bool MapLoaded): mnLastInitKFidMap(initKFid), mHasViewer(false)
+Atlas::Atlas(int initKFid): mnLastInitKFidMap(initKFid), mHasViewer(false)
 {
     mpCurrentMap = static_cast<Map*>(NULL);
-    if(!MapLoaded)
-    {   
-        CreateNewMap();
-    } 
-    else
-    {
-        std::cout << "** changing" << std::endl;
-        vector<Map*> allmap = GetAllMaps();
-        for(Map* pMap : allmap){
-            if(pMap->GetId()==0){
-                
-                ChangeMap(pMap);
-                break;
-            }
-        }
-        if(!MapLoaded)
-        {
-            std::cout << "** change failed" << std::endl;
-            CreateNewMap();
-        }
-    }
+    CreateNewMap();
 }
 
 Atlas::~Atlas()

@@ -2398,8 +2398,6 @@ namespace ORB_SLAM3
     {
         int nmatches = 0;
 
-        const Sophus::SE3f Tcw = CurrentFrame.GetPose();
-        Eigen::Vector3f Ow = Tcw.inverse().translation();
 
         // Rotation Histogram (to check rotation consistency)
         vector<int> rotHist[HISTO_LENGTH];
@@ -2413,94 +2411,154 @@ namespace ORB_SLAM3
         {
             MapPoint* pMP = vpMPs[i];
 
-            if(pMP)
+            if(!pMP || pMP->isBad() || sAlreadyFound.count(pMP))
+                continue;
+
+            // For each MapPoint, iterate over all cameras in the current frame
+            for (int camId = 0; camId < 4; ++camId)
             {
-                if(!pMP->isBad() && !sAlreadyFound.count(pMP))
+                // Check if the camera exists in the current frame
+                bool bCameraExists = false;
+                if (camId == 0 && CurrentFrame.N > 0) bCameraExists = true;
+                else if (camId == 1 && CurrentFrame.Nright > 0) bCameraExists = true;
+                else if (camId == 2 && CurrentFrame.Nsideleft > 0) bCameraExists = true;
+                else if (camId == 3 && CurrentFrame.Nsideright > 0) bCameraExists = true;
+
+                if (!bCameraExists)
                 {
-                    //Project
+                    continue;
+                }
+
+                Sophus::SE3f Tcw_cam;
+                Eigen::Vector3f Ow_cam;
+                GeometricCamera* pCamera_cam;
+
+                const Sophus::SE3f Tcw_main = CurrentFrame.GetPose();
+                const Eigen::Vector3f Ow_main = CurrentFrame.GetCameraCenter();
+
+                switch (camId)
+                {
+                    case 0:
+                        Tcw_cam = Tcw_main;
+                        Ow_cam = Ow_main;
+                        pCamera_cam = CurrentFrame.mpCamera;
+                        break;
+                    case 1:
+                        Tcw_cam = CurrentFrame.GetRelativePoseTrl() * Tcw_main;
+                        Ow_cam = Tcw_cam.inverse().translation();
+                        pCamera_cam = CurrentFrame.mpCamera2;
+                        break;
+                    case 2:
+                        Tcw_cam = CurrentFrame.GetRelativePoseTsll() * Tcw_main;
+                        Ow_cam = Tcw_cam.inverse().translation();
+                        pCamera_cam = CurrentFrame.mpCamera3;
+                        break;
+                    case 3:
+                        Tcw_cam = CurrentFrame.GetRelativePoseTsrl() * Tcw_main;
+                        Ow_cam = Tcw_cam.inverse().translation();
+                        pCamera_cam = CurrentFrame.mpCamera4;
+                        break;
+                }
+
+                // Project
                     Eigen::Vector3f x3Dw = pMP->GetWorldPos();
                     Eigen::Vector3f x3Dc = Tcw * x3Dw;
 
-                    const Eigen::Vector2f uv = CurrentFrame.mpCamera->project(x3Dc);
+                // Depth must be positive
+                if(x3Dc.z() < 0.0f)
+                    continue;
+                const Eigen::Vector2f uv = pCamera_cam->project(x3Dc);
 
-                    if(uv(0)<CurrentFrame.mnMinX || uv(0)>CurrentFrame.mnMaxX)
-                        continue;
-                    if(uv(1)<CurrentFrame.mnMinY || uv(1)>CurrentFrame.mnMaxY)
-                        continue;
+
+                // Point must be inside the image boundaries (using main camera's boundaries for all)
+                if(uv(0) < CurrentFrame.mnMinX || uv(0) > CurrentFrame.mnMaxX || uv(1) < CurrentFrame.mnMinY || uv(1) > CurrentFrame.mnMaxY)
+                    continue;
 
                     // Compute predicted scale level
-                    Eigen::Vector3f PO = x3Dw-Ow;
+                    Eigen::Vector3f PO = x3Dw - Ow_cam;
                     float dist3D = PO.norm();
 
                     const float maxDistance = pMP->GetMaxDistanceInvariance();
                     const float minDistance = pMP->GetMinDistanceInvariance();
 
                     // Depth must be inside the scale pyramid of the image
-                    if(dist3D<minDistance || dist3D>maxDistance)
+                    if(dist3D < minDistance || dist3D > maxDistance)
                         continue;
 
-                    int nPredictedLevel = pMP->PredictScale(dist3D,&CurrentFrame);
+                    int nPredictedLevel = pMP->PredictScale(dist3D, &CurrentFrame);
 
-                    // Search in a window
-                    const float radius = th*CurrentFrame.mvScaleFactors[nPredictedLevel];
+                // Search in a window
+                const float radius = th * CurrentFrame.mvScaleFactors[nPredictedLevel];
 
-                    const vector<size_t> vIndices2 = CurrentFrame.GetFeaturesInArea(uv(0), uv(1), radius, nPredictedLevel-1, nPredictedLevel+1);
+                const vector<size_t> vIndices = CurrentFrame.GetFeaturesInArea(uv(0), uv(1), radius, nPredictedLevel-1, nPredictedLevel+1, camId);
 
-                    if(vIndices2.empty())
+                if(vIndices.empty())
+                    continue;
+
+                const cv::Mat dMP = pMP->GetDescriptor();
+
+                int bestDist = 256;
+                int bestIdx_cam = -1; // Index within the specific camera's feature vector
+
+                int offset = 0;
+                if (camId == 1) offset = CurrentFrame.Nleft;
+                else if (camId == 2) offset = CurrentFrame.Nleft + CurrentFrame.Nright;
+                else if (camId == 3) offset = CurrentFrame.Nleft + CurrentFrame.Nright + CurrentFrame.Nsideleft;
+
+                for(vector<size_t>::const_iterator vit=vIndices.begin(); vit!=vIndices.end(); vit++)
+                {
+                    const size_t i2_cam = *vit; // Index within the specific camera's feature vector
+                    const size_t i2_global = i2_cam + offset; // Global index in mvpMapPoints
+
+                    if(CurrentFrame.mvpMapPoints[i2_global])
                         continue;
 
-                    const cv::Mat dMP = pMP->GetDescriptor();
+                    const cv::Mat &d = CurrentFrame.mDescriptors.row(i2_global);
+                    const int dist = DescriptorDistance(dMP,d);
 
-                    int bestDist = 256;
-                    int bestIdx2 = -1;
-
-                    for(vector<size_t>::const_iterator vit=vIndices2.begin(); vit!=vIndices2.end(); vit++)
+                    if(dist < bestDist)
                     {
-                        const size_t i2 = *vit;
-                        if(CurrentFrame.mvpMapPoints[i2])
-                            continue;
-
-                        const cv::Mat &d = CurrentFrame.mDescriptors.row(i2);
-
-                        const int dist = DescriptorDistance(dMP,d);
-
-                        if(dist<bestDist)
-                        {
-                            bestDist=dist;
-                            bestIdx2=i2;
-                        }
+                        bestDist = dist;
+                        bestIdx_cam = i2_cam;
                     }
+                }
 
-                    if(bestDist<=ORBdist)
+                if(bestDist <= ORBdist)
+                {
+                    const int bestIdx_global = bestIdx_cam + offset;
+                    CurrentFrame.mvpMapPoints[bestIdx_global] = pMP;
+                    nmatches++;
+
+                    if(mbCheckOrientation)
                     {
-                        CurrentFrame.mvpMapPoints[bestIdx2]=pMP;
-                        nmatches++;
+                        // Keypoint from KeyFrame (pKF)
+                        const cv::KeyPoint& kpKF = pKF->GetKey(i);
+                        // Keypoint from CurrentFrame
+                        cv::KeyPoint kpCF;
+                        if (bestIdx_global < CurrentFrame.Nleft)
+                            kpCF = CurrentFrame.mvKeys[bestIdx_global];
+                        else if (bestIdx_global < CurrentFrame.Nleft + CurrentFrame.Nright)
+                            kpCF = CurrentFrame.mvKeysRight[bestIdx_global - CurrentFrame.Nleft];
+                        else if (bestIdx_global < CurrentFrame.Nleft + CurrentFrame.Nright + CurrentFrame.Nsideleft)
+                            kpCF = CurrentFrame.mvKeysSideLeft[bestIdx_global - CurrentFrame.Nleft - CurrentFrame.Nright];
+                        else
+                            kpCF = CurrentFrame.mvKeysSideRight[bestIdx_global - CurrentFrame.Nleft - CurrentFrame.Nright - CurrentFrame.Nsideleft];
 
-                        if(mbCheckOrientation)
-                        {
-                            float rot = pKF->mvKeysUn[i].angle-CurrentFrame.mvKeysUn[bestIdx2].angle;
-                            // 尝试
-                            // rot = fmod(rot,360.0f);
-                            //
 
-                            if(rot<0.0)
-                                rot+=360.0f;
-                            int bin = round(rot*factor);
-                            if(bin==HISTO_LENGTH)
-                                bin=0;
-                            // changshi
-                            // if(bin < 0)
-                            //     bin = 0;
-                            // else if(bin >= HISTO_LENGTH)
-                            //     bin = HISTO_LENGTH - 1;
-                            //
-                            assert(bin>=0 && bin<HISTO_LENGTH);
-                            rotHist[bin].push_back(bestIdx2);
-                        }
+                        float rot = kpKF.angle - kpCF.angle;
+                        if(rot < 0.0)
+                            rot += 360.0f;
+                        int bin = round(rot * factor);
+                        if(bin == HISTO_LENGTH)
+                            bin = 0;
+                        assert(bin >= 0 && bin < HISTO_LENGTH);
+                        rotHist[bin].push_back(bestIdx_global);
                     }
-
+                    // A MapPoint should be matched only once in the whole frame
+                    goto next_mappoint;
                 }
             }
+            next_mappoint:;
         }
 
         if(mbCheckOrientation)

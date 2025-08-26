@@ -127,6 +127,7 @@ public:
         int             id;
         Eigen::Matrix3d R_cam_tag;
         Eigen::Vector3d t_cam_tag;
+        int             camID = 0;
     };
     // 新增Tag：用于 System::trackmono下发检测结果供保存
     void SetTagDetections(const std::vector<TagDetection>& vD);

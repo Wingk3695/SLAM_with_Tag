@@ -1713,14 +1713,43 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
                 continue;
         
             g2o::SE3Quat T_w_tag(R_w_tag, t_w_tag);
-            g2o::SE3Quat T_cam_tag_measured(obsVec[0].R_cam_tag, obsVec[0].t_cam_tag);
+            Sophus::SE3f T_cam_tag_measured(obsVec[0].R_cam_tag.cast<float>(), obsVec[0].t_cam_tag.cast<float>());
+            
+            if (obsVec[0].camID == 1) { // cam2 (Right)
+                T_cam_tag_measured = pKFi->GetRelativePoseTlr() * T_cam_tag_measured;
+            } else if (obsVec[0].camID == 2) { // cam3 (Side-Left)
+                T_cam_tag_measured = pKFi->GetRelativePoseTlsl() * T_cam_tag_measured;
+            } else if (obsVec[0].camID == 3) { // cam4 (Side-Right)
+                T_cam_tag_measured = pKFi->GetRelativePoseTlsr() * T_cam_tag_measured;
+            }
+            g2o::SE3Quat T_cam_tag_measure = Converter::toSE3Quat(T_cam_tag_measured);
+
+            // ======================= DEBUGGING CODE START =======================
+            {
+                // 从优化器中获取当前关键帧的位姿估计值 (Tcw)
+                g2o::VertexSE3Expmap* vSE3 = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(pKFi->mnId));
+                g2o::SE3Quat Tcw_current_estimate = vSE3->estimate();
+
+                g2o::SE3Quat Tcw_measurement = T_cam_tag_measure * T_w_tag.inverse();
+
+                // 计算 Tcw 测量值与当前估计的误差
+                // 误差 = 测量值 * (估计值)^-1
+                g2o::SE3Quat error_transform_Tcw = Tcw_measurement * Tcw_current_estimate.inverse();
+                Eigen::Matrix<double, 6, 1> error_vec_Tcw = error_transform_Tcw.log(); // 转换为李代数
+
+                std::cout << "--- TAG DEBUG [KF " << pKFi->mnId << ", Tag " << tagId << "] ---" << std::endl;
+                std::cout << "  Initial Error Norm (if measured as Tcw): " << error_vec_Tcw.norm() << std::endl;
+            }
+            // ======================= DEBUGGING CODE END =======================
+
 
             auto* e = new g2o::EdgeSE3Prior();
             e->setVertex(0, optimizer.vertex(pKFi->mnId));
-            e->setMeasurement(T_w_tag * T_cam_tag_measured.inverse());
+            //e->setMeasurement(T_w_tag * T_cam_tag_measure.inverse());//Twc?
+            e->setMeasurement(T_cam_tag_measure * T_w_tag.inverse());//Tcw!
 
             int obsCount = tagStorage.GetObservationCount(tagId);
-            double weight = 10.0 * (1.0 - exp(-obsCount/5.0));
+            double weight = 2.0 * (1.0 - exp(-obsCount/5.0));
             Eigen::Matrix<double,6,6> info = Eigen::Matrix<double,6,6>::Identity();
             info.block<3,3>(0,0) *= 0.5 * weight;
             info.block<3,3>(3,3) *= 1.0 * weight;

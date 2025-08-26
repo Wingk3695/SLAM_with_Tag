@@ -27,6 +27,7 @@ TagStorage::TagStorage()
 
 TagStorage::~TagStorage() {
     DestroyDetector();
+    DestroyDetectorPool();
 }
 
 void TagStorage::InitDetectorAndLoad(const std::string& filename) {
@@ -42,6 +43,19 @@ void TagStorage::InitDetectorAndLoad(const std::string& filename) {
     mpDetector->nthreads      = 4;
     mpDetector->debug         = 0;
     mpDetector->refine_edges  = 1;
+
+    int detector_pool_size = 4; 
+        for (int i = 0; i < detector_pool_size; i++) {
+        apriltag_detector_t* detector = apriltag_detector_create();
+        apriltag_detector_add_family_bits(detector, mpTagFamily, 1);
+        detector->quad_decimate = 2.0;
+        detector->quad_sigma = 0.0;
+        detector->nthreads = 1;
+        detector->debug = 0;
+        detector->refine_edges = 1;
+        mDetectorPool.push_back(detector);
+    }
+
     // 载入已有Tag
     mLoaded = tagLoad(filename);
     if (mLoaded) {
@@ -67,10 +81,41 @@ void TagStorage::DestroyDetector() {
     }
 }
 
+void TagStorage::InitDetectorPool(int pool_size) {
+    if (!mpTagFamily) {
+        InitDetectorAndLoad();
+    }
+    for (int i = 0; i < pool_size; i++) {
+        apriltag_detector_t* detector = apriltag_detector_create();
+        apriltag_detector_add_family_bits(detector, mpTagFamily, 1);
+        detector->quad_decimate = 2.0;
+        detector->quad_sigma = 0.0;
+        detector->nthreads = 1;
+        detector->debug = 0;
+        detector->refine_edges = 1;
+        mDetectorPool.push_back(detector);
+    }
+}
+
+apriltag_detector_t* TagStorage::GetThreadDetector(int thread_id) {
+    if (mDetectorPool.empty()) {
+        InitDetectorPool(4); // 默认创建4个
+    }
+    return mDetectorPool[thread_id % mDetectorPool.size()];
+}
+
+void TagStorage::DestroyDetectorPool() {
+    for (auto detector : mDetectorPool) {
+        apriltag_detector_destroy(detector);
+    }
+    mDetectorPool.clear();
+}
+
 void TagStorage::tagWrite(int id,
                            KeyFrame* pKF,
                            const Eigen::Matrix3d R_cam_tag,
-                           const Eigen::Vector3d t_cam_tag)
+                           const Eigen::Vector3d t_cam_tag,
+                           int camID)
 {
     if (!pKF) return; // 自检：空指针直接丢弃
     std::lock_guard<std::mutex> lock(mMutex);
@@ -78,6 +123,7 @@ void TagStorage::tagWrite(int id,
     tempobs.pKF = pKF;
     tempobs.R_cam_tag = R_cam_tag;
     tempobs.t_cam_tag = t_cam_tag;
+    tempobs.camID = camID;
     mStorage[id].push_back(tempobs);
 }
 
@@ -114,7 +160,7 @@ bool TagStorage::tagRead(int id,
         if (!pKF || pKF->isBad()) continue;
 
         // 1) 取出 Camera->World 的 4×4 变换
-        Sophus::SE3f Twc_SE3 = pKF->GetPoseInverse();
+        Sophus::SE3f Twc_SE3 = pKF->GetPoseInverse(obs.camID);
         Eigen::Matrix4f Twc_mat = Twc_SE3.matrix();
         Eigen::Matrix3d R_w_c = Twc_mat.block<3,3>(0,0).cast<double>();
         Eigen::Vector3d t_w_c = Twc_mat.block<3,1>(0,3).cast<double>();

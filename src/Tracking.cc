@@ -3188,7 +3188,7 @@ bool Tracking::TrackWithTag()
         // 获取观测次数作为权重
         int observationCount = TagStorage::Instance().GetObservationCount(tag.id);
     
-        // 排除只观测一次的tag
+        // 排除只观测一次的tag 改2？
         if (observationCount <= 1) {
             continue;
         }
@@ -3203,6 +3203,13 @@ bool Tracking::TrackWithTag()
             tag.R_cam_tag.cast<float>(),
             tag.t_cam_tag.cast<float>()
         );
+        if (tag.camID == 1) { // cam2 (Right)
+            T_cam_tag = mTlr * T_cam_tag;
+        } else if (tag.camID == 2) { // cam3 (Side-Left)
+            T_cam_tag = mTlsl * T_cam_tag;
+        } else if (tag.camID == 3) { // cam4 (Side-Right)
+            T_cam_tag = mTlsr * T_cam_tag;
+        }
         Sophus::SE3f T_cam_world = T_cam_tag * T_world_tag.inverse();
         vValidPoses.push_back(T_cam_world);  // 保存有效位姿
         weights.push_back(static_cast<float>(observationCount));
@@ -3572,7 +3579,8 @@ bool Tracking::NeedNewKeyFrame()
 void Tracking::SetTagDetections(const std::vector<TagDetection>& vD) {
     std::lock_guard<std::mutex> lk(mTagDetMutex);
     //mTagDetBuf = vD;
-    mTagDetBuf = std::move(vD);
+    // mTagDetBuf = std::move(vD);
+    mTagDetBuf.insert(mTagDetBuf.end(), vD.begin(), vD.end());
 }
 
 void Tracking::CreateNewKeyFrame()
@@ -3699,17 +3707,21 @@ void Tracking::CreateNewKeyFrame()
         o.pKF        = pKF;        // 绑定到本次新建的 KeyFrame
         o.R_cam_tag  = d.R_cam_tag;
         o.t_cam_tag  = d.t_cam_tag;
+        o.camID = d.camID;
         TagStorage::Instance().tagWrite(
             d.id,
             o.pKF,
             o.R_cam_tag,
-            o.t_cam_tag
+            o.t_cam_tag,
+            o.camID
         );
         cout << "存Tag";
         cout << d.id;
+        cout << "相机" << d.camID ;
         cout << endl;
     }
     mCurrentFrameTags.clear();
+    cout << "---------" << endl;
     //新增：tag检测end
 
 

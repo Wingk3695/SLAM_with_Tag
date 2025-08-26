@@ -78,10 +78,10 @@ int main(int argc, char **argv)
         string pathSeq(argv[(2*seq) + 3]);
         string pathTimeStamps(argv[(2*seq) + 4]);
         // cam 1043
-        string pathCam0 = pathSeq + "/left";  // Left Camera part1
-        string pathCam1 = pathSeq + "/right";  // Right Camera part4
-        string pathCam2 = pathSeq + "/sideleft";  // SideLeft Camera part2
-        string pathCam3 = pathSeq + "/sideright";  // Sideright Camera part3
+        string pathCam0 = pathSeq + "/left";  // Left Camera
+        string pathCam1 = pathSeq + "/right";  // Right Camera
+        string pathCam2 = pathSeq + "/sideleft";  // SideLeft Camera
+        string pathCam3 = pathSeq + "/sideright";  // Sideright Camera
         string pathImu = pathSeq + "/imu/imu_data.csv";
         LoadImages(pathCam0, pathCam1, pathCam2, pathCam3, pathTimeStamps, vstrImageLeft[seq], vstrImageRight[seq], vstrImageSideLeft[seq], vstrImageSideRight[seq], vTimestampsCam[seq]);
         cout << "LOADED!" << endl;
