@@ -84,6 +84,9 @@ Time*
 
 !Thirdparty/DBoW2/Dutils/
 !Thirdparty/g2o/g2o/stuff/
+!Thirdparty/apriltag/common/time_util.c
+!Thirdparty/apriltag/common/time_util.h
+!Thirdparty/apriltag/common/timeprofile.h
 
 Table_Euroc
 Table_TUMVI_rooms/
