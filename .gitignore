@@ -83,6 +83,7 @@ time*
 Time*
 
 !Thirdparty/DBoW2/Dutils/
+!Thirdparty/g2o/g2o/stuff/
 
 Table_Euroc
 Table_TUMVI_rooms/
