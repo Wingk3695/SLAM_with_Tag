@@ -1725,23 +1725,22 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
             g2o::SE3Quat T_cam_tag_measure = Converter::toSE3Quat(T_cam_tag_measured);
 
             // ======================= DEBUGGING CODE START =======================
-            {
-                // 从优化器中获取当前关键帧的位姿估计值 (Tcw)
-                g2o::VertexSE3Expmap* vSE3 = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(pKFi->mnId));
-                g2o::SE3Quat Tcw_current_estimate = vSE3->estimate();
+            // {
+            //     // 从优化器中获取当前关键帧的位姿估计值 (Tcw)
+            //     g2o::VertexSE3Expmap* vSE3 = static_cast<g2o::VertexSE3Expmap*>(optimizer.vertex(pKFi->mnId));
+            //     g2o::SE3Quat Tcw_current_estimate = vSE3->estimate();
 
-                g2o::SE3Quat Tcw_measurement = T_cam_tag_measure * T_w_tag.inverse();
+            //     g2o::SE3Quat Tcw_measurement = T_cam_tag_measure * T_w_tag.inverse();
 
-                // 计算 Tcw 测量值与当前估计的误差
-                // 误差 = 测量值 * (估计值)^-1
-                g2o::SE3Quat error_transform_Tcw = Tcw_measurement * Tcw_current_estimate.inverse();
-                Eigen::Matrix<double, 6, 1> error_vec_Tcw = error_transform_Tcw.log(); // 转换为李代数
+            //     // 计算 Tcw 测量值与当前估计的误差
+            //     // 误差 = 测量值 * (估计值)^-1
+            //     g2o::SE3Quat error_transform_Tcw = Tcw_measurement * Tcw_current_estimate.inverse();
+            //     Eigen::Matrix<double, 6, 1> error_vec_Tcw = error_transform_Tcw.log(); // 转换为李代数
 
-                std::cout << "--- TAG DEBUG [KF " << pKFi->mnId << ", Tag " << tagId << "] ---" << std::endl;
-                std::cout << "  Initial Error Norm (if measured as Tcw): " << error_vec_Tcw.norm() << std::endl;
-            }
+            //     std::cout << "--- TAG DEBUG [KF " << pKFi->mnId << ", Tag " << tagId << "] ---" << std::endl;
+            //     std::cout << "  Initial Error Norm (if measured as Tcw): " << error_vec_Tcw.norm() << std::endl;
+            // }
             // ======================= DEBUGGING CODE END =======================
-
 
             auto* e = new g2o::EdgeSE3Prior();
             e->setVertex(0, optimizer.vertex(pKFi->mnId));

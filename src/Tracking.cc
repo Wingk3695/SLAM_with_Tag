@@ -2074,8 +2074,8 @@ void Tracking::Track()
 
                 // 新增：优先尝试Tag跟踪
                 bOK = TrackWithTag();
-                if(bOK)
-                    std::cout << "[Tag] Using TrackingWithTag " << endl;
+                // if(bOK)
+                //     std::cout << "[Tag] Using TrackingWithTag " << endl;
                 if(!bOK){
 
                     if((!mbVelocity && !pCurrentMap->isImuInitialized()) || mCurrentFrame.mnId<mnLastRelocFrameId+2)
@@ -3160,7 +3160,7 @@ bool Tracking::TrackWithMotionModel()
 
 bool Tracking::TrackWithTag()
 {
-    // return false;
+    //return false;
     // 1. 获取当前帧Tag检测结果（线程安全）
     std::vector<TagDetection> currentTags;
     {
@@ -3217,12 +3217,7 @@ bool Tracking::TrackWithTag()
     }
     if(vValidPoses.empty()) 
         return false;
-    // 3.3 用平均值更新当前帧位姿 Tcw
-    // Sophus::SE3f::Tangent sum = Sophus::SE3f::Tangent::Zero();  // 使用Tangent代替LieAlgebra
-    // for(auto& pose : vValidPoses) {
-    //     sum += pose.log();  // 累加李代数
-    // }
-    // mCurrentFrame.SetPose(Sophus::SE3f::exp(sum / vValidPoses.size()));  // 取平均
+
     Sophus::SE3f::Tangent weightedSum = Sophus::SE3f::Tangent::Zero();
     for(size_t i = 0; i < vValidPoses.size(); ++i) {
         weightedSum += (weights[i] / totalWeight) * vValidPoses[i].log();  // 加权累加李代数
@@ -3579,7 +3574,7 @@ bool Tracking::NeedNewKeyFrame()
 void Tracking::SetTagDetections(const std::vector<TagDetection>& vD) {
     std::lock_guard<std::mutex> lk(mTagDetMutex);
     //mTagDetBuf = vD;
-    // mTagDetBuf = std::move(vD);
+    //mTagDetBuf = std::move(vD);
     mTagDetBuf.insert(mTagDetBuf.end(), vD.begin(), vD.end());
 }
 
@@ -3715,13 +3710,13 @@ void Tracking::CreateNewKeyFrame()
             o.t_cam_tag,
             o.camID
         );
-        cout << "存Tag";
-        cout << d.id;
-        cout << "相机" << d.camID ;
-        cout << endl;
+        // cout << "存Tag";
+        // cout << d.id;
+        // cout << "相机" << d.camID ;
+        // cout << endl;
     }
     mCurrentFrameTags.clear();
-    cout << "---------" << endl;
+    //cout << "---------" << endl;
     //新增：tag检测end
 
 
@@ -4002,8 +3997,64 @@ void Tracking::UpdateLocalKeyFrames()
 }
 
 bool Tracking::Relocalization()
-{
+{ 
     Verbose::PrintMess("Starting relocalization", Verbose::VERBOSITY_NORMAL);
+    // // 优先通过 AprilTag 进行重定位
+    // std::vector<TagDetection> currentTags;
+    // {
+    //     std::lock_guard<std::mutex> lock(mTagDetMutex);
+    //     currentTags = mCurrentFrameTags;
+    // }
+
+    // if (!currentTags.empty()) {
+    //     std::vector<Sophus::SE3f> vValidPoses;
+    //     std::vector<float> weights;
+    //     float totalWeight = 0.0f;
+
+    //     for (const auto& tag : currentTags) {
+    //         Eigen::Matrix3d R_w_tag;
+    //         Eigen::Vector3d t_w_tag;
+    //         if (!TagStorage::Instance().tagRead(tag.id, R_w_tag, t_w_tag)) {
+    //             continue;
+    //         }
+    //         int observationCount = TagStorage::Instance().GetObservationCount(tag.id);
+    //         if (observationCount <= 1) { // 至少被观测到两次的Tag才认为是可靠的
+    //             continue;
+    //         }
+
+    //         Sophus::SE3f T_world_tag(R_w_tag.cast<float>(), t_w_tag.cast<float>());
+    //         Sophus::SE3f T_cam_tag(tag.R_cam_tag.cast<float>(), tag.t_cam_tag.cast<float>());
+    //         if (tag.camID == 1) T_cam_tag = mTlr * T_cam_tag;
+    //         else if (tag.camID == 2) T_cam_tag = mTlsl * T_cam_tag;
+    //         else if (tag.camID == 3) T_cam_tag = mTlsr * T_cam_tag;
+
+    //         vValidPoses.push_back(T_cam_tag * T_world_tag.inverse());
+    //         weights.push_back(static_cast<float>(observationCount));
+    //         totalWeight += static_cast<float>(observationCount);
+    //     }
+
+    //     if (!vValidPoses.empty()) {
+    //         Sophus::SE3f::Tangent weightedSum = Sophus::SE3f::Tangent::Zero();
+    //         for (size_t i = 0; i < vValidPoses.size(); ++i) {
+    //             weightedSum += (weights[i] / totalWeight) * vValidPoses[i].log();
+    //         }
+    //         mCurrentFrame.SetPose(Sophus::SE3f::exp(weightedSum));
+
+    //         // 通过投影匹配地图点来验证位姿
+    //         UpdateLocalMap(); // 使用估计的位姿更新局部地图
+    //         SearchLocalPoints(); // 在局部地图中搜索匹配点
+    //         int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+
+    //         if (nGood >= 20) { // 如果有足够多的内点支持，则认为重定位成功
+    //             mnLastRelocFrameId = mCurrentFrame.mnId;
+    //             std::cout << "[Tag] Relocalized with " << nGood << " inliers!" << std::endl;
+    //             return true;
+    //         } else {
+    //             std::cout << "[Tag] Relocalization failed validation, only " << nGood << " inliers. Falling back to BoW." << std::endl;
+    //         }
+    //     }
+    // }
+    
     // Compute Bag of Words Vector
     mCurrentFrame.ComputeBoW();
 

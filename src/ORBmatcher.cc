@@ -2583,7 +2583,7 @@ namespace ORB_SLAM3
 
         return nmatches;
     }
-    
+
     void ORBmatcher::ComputeThreeMaxima(vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3)
     {
         int max1=0;

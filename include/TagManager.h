@@ -52,8 +52,11 @@ public:
     // 已载入：从mStorageRt取出
     bool tagRead(int id,
                  Eigen::Matrix3d& R_w_tag_avg,
+                 Eigen::Vector3d& t_w_tag_avg);
+    bool tagRead(int id,
+                 Eigen::Matrix3d& R_w_tag_avg,
                  Eigen::Vector3d& t_w_tag_avg,
-                 bool cprint = false);
+                 double& t_err_avg);
 
     // 自检：KeyFrame在SLAM过程中可能被删除，isbad()或指针变空，需要清理失效的tag观测记录
     void tagCleanup();
@@ -77,7 +80,7 @@ private:
     ~TagStorage();
     TagStorage(const TagStorage&) = delete;
     TagStorage& operator=(const TagStorage&) = delete;
-    
+
     std::vector<apriltag_detector_t*> mDetectorPool; // 检测器池
 
     // 观测记录存储

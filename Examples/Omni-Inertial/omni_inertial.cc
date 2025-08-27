@@ -235,13 +235,21 @@ int main(int argc, char **argv)
 
     Eigen::Matrix3d aaaaa;
     Eigen::Vector3d bbbbb;
+    double err_tagi;
+    double err_all = 0;
+    double count_all = 0;
+    double err_avg;
     TagStorage::Instance().tagCleanup();
     cout << "-------" << endl;
     for (int i = 0; i <= 20; i++) {
-    TagStorage::Instance().tagRead(i, aaaaa, bbbbb, true);
+    TagStorage::Instance().tagRead(i, aaaaa, bbbbb, err_tagi);
     cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
-}
-TagStorage::Instance().tagSave();
+    err_all = err_tagi * TagStorage::Instance().GetObservationCount(i) + err_all;
+    count_all += TagStorage::Instance().GetObservationCount(i);
+    }
+    err_avg = err_all / count_all;
+    cout << "平均观测误差为:" << err_avg << " m !!!" << endl;
+
 
 
     // Save camera trajectory

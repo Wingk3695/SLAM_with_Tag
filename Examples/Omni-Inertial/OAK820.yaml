@@ -182,7 +182,7 @@ Viewer.imageViewScale: 0.8
 # Map Parameters
 #--------------------------------------------------------------------------------------------
 # If the LoadFile doesn't exist, the system give a message and create a new Atlas from scratch
-System.LoadAtlasFromFile: "OAK19A_map"
+# System.LoadAtlasFromFile: "moni_map"
 #
 # The store file is created from the current session, if a file with the same name exists it is deleted
 # System.SaveAtlasToFile: "OAK19A_map"

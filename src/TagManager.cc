@@ -56,6 +56,7 @@ void TagStorage::InitDetectorAndLoad(const std::string& filename) {
         mDetectorPool.push_back(detector);
     }
 
+    
     // 载入已有Tag
     mLoaded = tagLoad(filename);
     if (mLoaded) {
@@ -80,6 +81,8 @@ void TagStorage::DestroyDetector() {
         mpTagFamily = nullptr;
     }
 }
+
+
 
 void TagStorage::InitDetectorPool(int pool_size) {
     if (!mpTagFamily) {
@@ -111,6 +114,8 @@ void TagStorage::DestroyDetectorPool() {
     mDetectorPool.clear();
 }
 
+
+
 void TagStorage::tagWrite(int id,
                            KeyFrame* pKF,
                            const Eigen::Matrix3d R_cam_tag,
@@ -129,12 +134,10 @@ void TagStorage::tagWrite(int id,
 
 bool TagStorage::tagRead(int id,
                          Eigen::Matrix3d& R_w_tag_avg,
-                         Eigen::Vector3d& t_w_tag_avg,
-                         bool cprint)
+                         Eigen::Vector3d& t_w_tag_avg)
 {
     std::lock_guard<std::mutex> lock(mMutex);
 
-    // 如果已经从文件载入，直接返回缓存
     if(mLoaded){
         auto itRt = mStorageRt.find(id);
         if (itRt != mStorageRt.end()) {
@@ -147,7 +150,7 @@ bool TagStorage::tagRead(int id,
         }
     }
 
-    // 没载入，就从观测累积计算
+    // 从观测累积计算
     auto itObs = mStorage.find(id);
     if (itObs == mStorage.end() || itObs->second.empty())
         return false;
@@ -159,13 +162,11 @@ bool TagStorage::tagRead(int id,
         ORB_SLAM3::KeyFrame* pKF = obs.pKF;
         if (!pKF || pKF->isBad()) continue;
 
-        // 1) 取出 Camera->World 的 4×4 变换
         Sophus::SE3f Twc_SE3 = pKF->GetPoseInverse(obs.camID);
         Eigen::Matrix4f Twc_mat = Twc_SE3.matrix();
         Eigen::Matrix3d R_w_c = Twc_mat.block<3,3>(0,0).cast<double>();
         Eigen::Vector3d t_w_c = Twc_mat.block<3,1>(0,3).cast<double>();
 
-        // 3) 世界到 Tag  = (相机到世界) * (相机到 Tag)
         Eigen::Matrix3d R_w_tag = R_w_c * obs.R_cam_tag;
         Eigen::Vector3d t_w_tag = R_w_c * obs.t_cam_tag + t_w_c;
 
@@ -175,18 +176,68 @@ bool TagStorage::tagRead(int id,
 
     if (qs.empty()) return false;
 
-    // 平均四元数
     Eigen::Quaterniond q_avg(0,0,0,0);
     for (auto& q : qs) q_avg.coeffs() += q.coeffs();
     q_avg.normalize();
 
-    // 平均平移
     Eigen::Vector3d t_avg(0,0,0);
     for (auto& t : ts) t_avg += t;
     t_avg /= double(ts.size());
 
-    // —— 计算平移误差 —— 
-    // 误差定义为每次观测平移与平均平移的欧式距离
+    std::vector<double> errs;
+    errs.reserve(ts.size());
+    for (auto& t : ts) {
+        errs.push_back((t - t_avg).norm());
+    }
+
+    R_w_tag_avg = q_avg.toRotationMatrix();
+    t_w_tag_avg = t_avg;
+
+    mStorageRt[id] = std::make_pair(R_w_tag_avg, t_w_tag_avg);
+    return true;
+}
+
+bool TagStorage::tagRead(int id,
+                         Eigen::Matrix3d& R_w_tag_avg,
+                         Eigen::Vector3d& t_w_tag_avg,
+                         double& t_err_avg)
+{
+    std::lock_guard<std::mutex> lock(mMutex);
+
+    // 观测累积计算
+    auto itObs = mStorage.find(id);
+    if (itObs == mStorage.end() || itObs->second.empty())
+        return false;
+
+    std::vector<Eigen::Quaterniond> qs;
+    std::vector<Eigen::Vector3d> ts;
+
+    for (auto& obs : itObs->second) {
+        ORB_SLAM3::KeyFrame* pKF = obs.pKF;
+        if (!pKF || pKF->isBad()) continue;
+
+        Sophus::SE3f Twc_SE3 = pKF->GetPoseInverse(obs.camID);
+        Eigen::Matrix4f Twc_mat = Twc_SE3.matrix();
+        Eigen::Matrix3d R_w_c = Twc_mat.block<3,3>(0,0).cast<double>();
+        Eigen::Vector3d t_w_c = Twc_mat.block<3,1>(0,3).cast<double>();
+
+        Eigen::Matrix3d R_w_tag = R_w_c * obs.R_cam_tag;
+        Eigen::Vector3d t_w_tag = R_w_c * obs.t_cam_tag + t_w_c;
+
+        qs.emplace_back(R_w_tag);
+        ts.emplace_back(t_w_tag);
+    }
+
+    if (qs.empty()) return false;
+
+    Eigen::Quaterniond q_avg(0,0,0,0);
+    for (auto& q : qs) q_avg.coeffs() += q.coeffs();
+    q_avg.normalize();
+
+    Eigen::Vector3d t_avg(0,0,0);
+    for (auto& t : ts) t_avg += t;
+    t_avg /= double(ts.size());
+
     std::vector<double> errs;
     errs.reserve(ts.size());
     for (auto& t : ts) {
@@ -194,19 +245,11 @@ bool TagStorage::tagRead(int id,
     }
     // 求最大和平均
     double t_err_max = *std::max_element(errs.begin(), errs.end());
-    double t_err_avg = std::accumulate(errs.begin(), errs.end(), 0.0) / errs.size();
-    if(cprint)
-        cout<< "id：" << id << "最大误差：" << t_err_max << "m 平均误差：" << t_err_avg << "m\n";
+    t_err_avg = std::accumulate(errs.begin(), errs.end(), 0.0) / errs.size();
 
-
-    R_w_tag_avg = q_avg.toRotationMatrix();
-    t_w_tag_avg = t_avg;
-
-    // 缓存结果，下次直接用
-    mStorageRt[id] = std::make_pair(R_w_tag_avg, t_w_tag_avg);
+    cout<< "id：" << id << "最大误差：" << t_err_max << "m 平均误差：" << t_err_avg << "m\n";
     return true;
 }
-
 
 void TagStorage::tagCleanup() {
     std::lock_guard<std::mutex> lk(mMutex);
