@@ -172,14 +172,21 @@ Viewer.imageViewScale: 0.8
 # Map Parameters
 #--------------------------------------------------------------------------------------------
 # If the LoadFile doesn't exist, the system give a message and create a new Atlas from scratch
-# System.LoadAtlasFromFile: "moni_map"
+System.LoadAtlasFromFile: "OAK_map_6th"
 #
 # The store file is created from the current session, if a file with the same name exists it is deleted
-System.SaveAtlasToFile: "OAK_map_6th"
+# System.SaveAtlasToFile: "OAK_map_6th"
 
 #--------------------------------------------------------------------------------------------
 # System Settings
 #--------------------------------------------------------------------------------------------
 # Activate Localization-Only mode automatically after a loop closure merge.
 # 1: true, 0: false.
-System.ActivateLocalizationAfterMerge: 0
+System.ActivateLocalizationAfterMerge: 1
+
+#--------------------------------------------------------------------------------------------
+# Tag Parameters
+#--------------------------------------------------------------------------------------------
+# Enable saving and loading of tag pose data.
+# 1: true, 0: false.
+Tag.Enable: 1

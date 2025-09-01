@@ -2073,7 +2073,10 @@ void Tracking::Track()
                 CheckReplacedInLastFrame();
 
                 // 新增：优先尝试Tag跟踪
-                bOK = TrackWithTag();
+                if(mCurrentFrame.mnId == mnLastRelocFrameId + 1)
+                    bOK = TrackReferenceKeyFrame();//zyq
+                else
+                    bOK = TrackWithTag();
                 // if(bOK)
                 //     std::cout << "[Tag] Using TrackingWithTag " << endl;
                 if(!bOK){
@@ -2159,14 +2162,15 @@ void Tracking::Track()
                         mpSystem->ResetActiveMap();
                         Verbose::PrintMess("Reseting current map...", Verbose::VERBOSITY_NORMAL);
                     }else
-                        CreateMapInAtlas();
+                        bOK = Relocalization();
+                    //     CreateMapInAtlas();
 
-                    if(mpLastKeyFrame)
-                        mpLastKeyFrame = static_cast<KeyFrame*>(NULL);
+                    // if(mpLastKeyFrame)
+                    //     mpLastKeyFrame = static_cast<KeyFrame*>(NULL);
 
-                    Verbose::PrintMess("done", Verbose::VERBOSITY_NORMAL);
+                    // Verbose::PrintMess("done", Verbose::VERBOSITY_NORMAL);
 
-                    return;
+                    // return;
                 }
             }
 
@@ -2182,72 +2186,81 @@ void Tracking::Track()
             }
             else
             {
-            // 新增：优先尝试Tag跟踪
-            bOK = TrackWithTag();
-            if(bOK)
-                std::cout << "[Tag] Using TrackingWithTag " << endl;
-            if(!bOK){
+                // 新增：优先尝试Tag跟踪
+                bOK = TrackWithTag();
+                if(bOK)
+                    std::cout << "[Tag] Using TrackingWithTag " << endl;
+                if(!bOK){
             
-                if(!mbVO)
-                {
-                    // In last frame we tracked enough MapPoints in the map
-                    if(mbVelocity)
+                    if(!mbVO)
                     {
-                        bOK = TrackWithMotionModel();
+                        // In last frame we tracked enough MapPoints in the map
+                        if(mbVelocity)
+                        {
+                            bOK = TrackWithMotionModel();
+                        }
+                        else
+                        {
+                            bOK = TrackReferenceKeyFrame();
+                        }
                     }
                     else
                     {
-                        bOK = TrackReferenceKeyFrame();
-                    }
-                }
-                else
-                {
-                    // In last frame we tracked mainly "visual odometry" points.
+                        // In last frame we tracked mainly "visual odometry" points.
 
-                    // We compute two camera poses, one from motion model and one doing relocalization.
-                    // If relocalization is sucessfull we choose that solution, otherwise we retain
-                    // the "visual odometry" solution.
+                        // We compute two camera poses, one from motion model and one doing relocalization.
+                        // If relocalization is sucessfull we choose that solution, otherwise we retain
+                        // the "visual odometry" solution.
 
-                    bool bOKMM = false;
-                    bool bOKReloc = false;
-                    vector<MapPoint*> vpMPsMM;
-                    vector<bool> vbOutMM;
-                    Sophus::SE3f TcwMM;
-                    if(mbVelocity)
-                    {
-                        bOKMM = TrackWithMotionModel();
-                        vpMPsMM = mCurrentFrame.mvpMapPoints;
-                        vbOutMM = mCurrentFrame.mvbOutlier;
-                        TcwMM = mCurrentFrame.GetPose();
-                    }
-                    bOKReloc = Relocalization();
-
-                    if(bOKMM && !bOKReloc)
-                    {
-                        mCurrentFrame.SetPose(TcwMM);
-                        mCurrentFrame.mvpMapPoints = vpMPsMM;
-                        mCurrentFrame.mvbOutlier = vbOutMM;
-
-                        if(mbVO)
+                        bool bOKMM = false;
+                        bool bOKReloc = false;
+                        vector<MapPoint*> vpMPsMM;
+                        vector<bool> vbOutMM;
+                        Sophus::SE3f TcwMM;
+                        if(mbVelocity)
                         {
-                            for(int i =0; i<mCurrentFrame.N; i++)
+                            bOKMM = TrackWithMotionModel();
+                            vpMPsMM = mCurrentFrame.mvpMapPoints;
+                            vbOutMM = mCurrentFrame.mvbOutlier;
+                            TcwMM = mCurrentFrame.GetPose();
+                        }
+                        bOKReloc = Relocalization();
+
+                        if(bOKMM && !bOKReloc)
+                        {
+                            mCurrentFrame.SetPose(TcwMM);
+                            mCurrentFrame.mvpMapPoints = vpMPsMM;
+                            mCurrentFrame.mvbOutlier = vbOutMM;
+
+                            if(mbVO)
                             {
-                                if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
+                                for(int i =0; i<mCurrentFrame.N; i++)
                                 {
-                                    mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+                                    if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
+                                    {
+                                        mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+                                    }
                                 }
                             }
                         }
-                    }
-                    else if(bOKReloc)
-                    {
-                        mbVO = false;
+                        else if(bOKReloc)
+                        {
+                            mbVO = false;
+                        }
+
+                        bOK = bOKReloc || bOKMM;
                     }
 
-                    bOK = bOKReloc || bOKMM;
                 }
 
-            }
+                // --- BLOG POST FIX START ---
+                // If tracking fails in localization mode, immediately try to relocalize.
+                // This prevents pose drift and allows for quick recovery.
+                if (mState == RECENTLY_LOST && !bOK)
+                {
+                    bOK = Relocalization();
+                }
+                // --- BLOG POST FIX END ---
 
             }
         }
@@ -2432,7 +2445,7 @@ void Tracking::Track()
             //         return;
             //     }
 
-            CreateMapInAtlas();
+            //CreateMapInAtlas();
 
             return;
         }
@@ -3999,7 +4012,7 @@ void Tracking::UpdateLocalKeyFrames()
 bool Tracking::Relocalization()
 { 
     Verbose::PrintMess("Starting relocalization", Verbose::VERBOSITY_NORMAL);
-    // // 优先通过 AprilTag 进行重定位
+    // 优先通过 AprilTag 进行重定位
     // std::vector<TagDetection> currentTags;
     // {
     //     std::lock_guard<std::mutex> lock(mTagDetMutex);
@@ -4040,21 +4053,74 @@ bool Tracking::Relocalization()
     //         }
     //         mCurrentFrame.SetPose(Sophus::SE3f::exp(weightedSum));
 
-    //         // 通过投影匹配地图点来验证位姿
-    //         UpdateLocalMap(); // 使用估计的位姿更新局部地图
-    //         SearchLocalPoints(); // 在局部地图中搜索匹配点
-    //         int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
 
-    //         if (nGood >= 20) { // 如果有足够多的内点支持，则认为重定位成功
-    //             mnLastRelocFrameId = mCurrentFrame.mnId;
-    //             std::cout << "[Tag] Relocalized with " << nGood << " inliers!" << std::endl;
-    //             return true;
+    //         // 1. 使用全局地图点进行初步匹配和位姿优化
+    //         vector<MapPoint*> vpAllMapPoints = mpAtlas->GetAllMapPoints();
+    //         ORBmatcher matcher(0.8, true);
+    //         int nInitialMatches = matcher.SearchByProjection(mCurrentFrame, vpAllMapPoints, 15);
+
+    //         if (nInitialMatches < 20) {
+    //             std::cout << "[Tag] Relocalization failed validation, only " << nInitialMatches << " initial matches. Falling back to BoW." << std::endl;
     //         } else {
-    //             std::cout << "[Tag] Relocalization failed validation, only " << nGood << " inliers. Falling back to BoW." << std::endl;
+    //             int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+
+    //             if (nGood < 15) {
+    //                 std::cout << "[Tag] Relocalization failed validation, only " << nGood << " inliers after optimization. Falling back to BoW." << std::endl;
+    //             } else {
+    //                 // 2. 位姿初步验证成功，现在正式重建局部地图
+    //                 std::cout << "[Tag] Relocalization pose validated with " << nGood << " inliers. Rebuilding local map..." << std::endl;
+
+    //                 // 2.1 更新参考关键帧 (您的代码，非常正确)
+    //                 KeyFrame* pBestKF = nullptr;
+    //                 int bestMatches = -1;
+    //                 map<KeyFrame*, int> kfCounter;
+    //                 for (int i = 0; i < mCurrentFrame.N; ++i) {
+    //                     if (mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i]) {
+    //                         MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
+    //                         if (!pMP->isBad()) {
+    //                             const map<KeyFrame*, tuple<int, int, int, int>> observations = pMP->GetObservations();
+    //                             for (auto const& [pKF, val] : observations) {
+    //                                 kfCounter[pKF]++;
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //                 for (auto const& [pKF, count] : kfCounter) {
+    //                     if (count > bestMatches) {
+    //                         bestMatches = count;
+    //                         pBestKF = pKF;
+    //                     }
+    //                 }
+    //                 if (pBestKF) {
+    //                     mpReferenceKF = pBestKF;
+    //                     mCurrentFrame.mpReferenceKF = pBestKF;
+    //                 }
+
+    //                 // 2.2 基于新的参考帧和匹配点，强制更新局部地图
+    //                 UpdateLocalMap();
+
+    //                 // 2.3 在新建的、更稠密的局部地图中搜索更多匹配点
+    //                 SearchLocalPoints();
+
+    //                 // 2.4 使用所有找到的匹配点进行最终的位姿优化
+    //                 nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+
+    //                 // 2.5 最终检查，需要有足够多的内点来保证跟踪的连续性
+    //                 if (nGood >= 30) { // 使用一个更严格的阈值，例如30，确保跟踪鲁棒
+    //                     mnLastRelocFrameId = mCurrentFrame.mnId;
+    //                     std::cout << "[Tag] Relocalized successfully with " << nGood << " total inliers!" << std::endl;
+    //                     return true;
+    //                 } else {
+    //                     std::cout << "[Tag] Local map tracking failed after relocalization, only " << nGood << " final inliers. Falling back to BoW." << std::endl;
+    //                 }
+    //             }
+
     //         }
+            
     //     }
+        
     // }
-    
+    // return false;
     // Compute Bag of Words Vector
     mCurrentFrame.ComputeBoW();
 
@@ -4158,6 +4224,7 @@ bool Tracking::Relocalization()
                 }
 
                 int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                cout << "BOW nGood:" << nGood << endl;
 
                 if(nGood<10)
                     continue;
@@ -4170,7 +4237,7 @@ bool Tracking::Relocalization()
                 if(nGood<50)
                 {
                     int nadditional =matcher2.SearchByProjection(mCurrentFrame,vpCandidateKFs[i],sFound,10,100);
-
+                    cout << " nadditional1 " << nadditional << endl;
                     if(nadditional+nGood>=50)
                     {
                         nGood = Optimizer::PoseOptimization(&mCurrentFrame);
@@ -4184,7 +4251,7 @@ bool Tracking::Relocalization()
                                 if(mCurrentFrame.mvpMapPoints[ip])
                                     sFound.insert(mCurrentFrame.mvpMapPoints[ip]);
                             nadditional =matcher2.SearchByProjection(mCurrentFrame,vpCandidateKFs[i],sFound,3,64);
-
+                            cout << " nadditional2 " << nadditional << endl;
                             // Final optimization
                             if(nGood+nadditional>=50)
                             {

@@ -28,6 +28,36 @@ void LoadImages(const string &strPathLeft, const string &strPathRight, const str
 
 void LoadIMU(const string &strImuPath, vector<double> &vTimeStamps, vector<cv::Point3f> &vAcc, vector<cv::Point3f> &vGyro);
 
+// ===================================================================================
+// 新增：带重试逻辑的健壮图像读取函数
+// ===================================================================================
+/**
+ * @brief Robustly reads an image with retry logic to handle transient I/O errors.
+ * @param filename Path to the image file.
+ * @param flags Flags passed to cv::imread.
+ * @param max_attempts Maximum number of read attempts.
+ * @param delay_ms Initial delay in milliseconds between attempts.
+ * @return The loaded cv::Mat. Returns an empty Mat if all attempts fail.
+ */
+cv::Mat imread_robust(const std::string& filename, int flags = cv::IMREAD_UNCHANGED, int max_attempts = 5, int delay_ms = 50) {
+    cv::Mat image;
+    for (int attempt = 1; attempt <= max_attempts; ++attempt) {
+        image = cv::imread(filename, flags);
+        if (!image.empty()) {
+            return image; // 成功读取
+        }
+        // 读取失败，记录警告，等待后重试
+        std::cerr << "Warning: Failed to load image " << filename
+                  << " on attempt " << attempt << ". Retrying..." << std::endl;
+        // 等待一个逐渐增加的时间
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms * attempt));
+    }
+    // 所有尝试均失败
+    std::cerr << "Error: Completely failed to load image " << filename << " after " << max_attempts << " attempts." << std::endl;
+    return image; // 返回空图像
+}
+// ===================================================================================
+
 int main(int argc, char **argv)
 {
     if(argc < 5)
@@ -125,6 +155,26 @@ int main(int argc, char **argv)
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_MULTI, true);
 
+    // ===================================================================================
+    // 新增：读取Tag保存/加载的开关
+    // ===================================================================================
+    bool bEnableTagStorage = false;
+    cv::FileNode node = fsSettings["Tag.Enable"];
+    if (!node.empty() && node.isInt())
+    {
+        bEnableTagStorage = (static_cast<int>(node) != 0);
+    }
+    if (bEnableTagStorage)
+    {
+        cout << "[System] INFO: Tag save/load is ENABLED in settings." << endl;
+    }
+    else
+    {
+        cout << "[System] INFO: Tag save/load is DISABLED in settings." << endl;
+    }
+    // ===================================================================================
+
+
     cv::Mat imLeft, imRight, imSideLeft, imSideRight;
     for (seq = 0; seq<num_seq; seq++)
     {
@@ -137,39 +187,25 @@ int main(int argc, char **argv)
         int proccIm = 0;
         for(int ni=0; ni<nImages[seq]; ni++, proccIm++)
         {
-            // Read left and right images from file
-            imLeft = cv::imread(vstrImageLeft[seq][ni],cv::IMREAD_UNCHANGED);
-            imRight = cv::imread(vstrImageRight[seq][ni],cv::IMREAD_UNCHANGED);
-            imSideLeft = cv::imread(vstrImageSideLeft[seq][ni],cv::IMREAD_UNCHANGED);
-            imSideRight = cv::imread(vstrImageSideRight[seq][ni],cv::IMREAD_UNCHANGED);
+            // ===================================================================================
+            // 修改：使用新的健壮函数读取图像
+            // ===================================================================================
+            imLeft = imread_robust(vstrImageLeft[seq][ni], cv::IMREAD_UNCHANGED);
+            imRight = imread_robust(vstrImageRight[seq][ni], cv::IMREAD_UNCHANGED);
+            imSideLeft = imread_robust(vstrImageSideLeft[seq][ni], cv::IMREAD_UNCHANGED);
+            imSideRight = imread_robust(vstrImageSideRight[seq][ni], cv::IMREAD_UNCHANGED);
 
-            if(imLeft.empty())
+            // ===================================================================================
+            // 修改：调整错误处理逻辑，跳过损坏的帧而不是退出
+            // ===================================================================================
+            if(imLeft.empty() || imRight.empty() || imSideLeft.empty() || imSideRight.empty())
             {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageLeft[seq][ni]) << endl;
-                return 1;
+                // imread_robust 内部已经打印了详细的错误信息
+                cerr << "Error: Skipping frame " << ni << " for timestamp " << fixed << vTimestampsCam[seq][ni]
+                     << " due to image loading failure after multiple retries." << endl;
+                continue; // 跳过当前循环，处理下一帧
             }
-
-            if(imRight.empty())
-            {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageRight[seq][ni]) << endl;
-                return 1;
-            }
-
-            if(imSideLeft.empty())
-            {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageSideLeft[seq][ni]) << endl;
-                return 1;
-            }
-
-            if(imSideRight.empty())
-            {
-                cerr << endl << "Failed to load image at: "
-                     << string(vstrImageSideRight[seq][ni]) << endl;
-                return 1;
-            }
+            // ===================================================================================
 
             double tframe = vTimestampsCam[seq][ni];
 
@@ -233,23 +269,30 @@ int main(int argc, char **argv)
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     SLAM.Shutdown();
 
-    Eigen::Matrix3d aaaaa;
-    Eigen::Vector3d bbbbb;
-    double err_tagi;
-    double err_all = 0;
-    double count_all = 0;
-    double err_avg;
-    TagStorage::Instance().tagCleanup();
-    cout << "-------" << endl;
-    for (int i = 0; i <= 20; i++) {
-    TagStorage::Instance().tagRead(i, aaaaa, bbbbb, err_tagi);
-    cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
-    err_all = err_tagi * TagStorage::Instance().GetObservationCount(i) + err_all;
-    count_all += TagStorage::Instance().GetObservationCount(i);
+    if (bEnableTagStorage) // 修改：使用开关控制Tag的保存和统计逻辑
+    {
+        Eigen::Matrix3d aaaaa;
+        Eigen::Vector3d bbbbb;
+        double err_tagi;
+        double err_all = 0;
+        double count_all = 0;
+        double err_avg;
+        TagStorage::Instance().tagCleanup();
+        cout << "-------" << endl;
+        for (int i = 0; i <= 20; i++) {
+        TagStorage::Instance().tagRead(i, aaaaa, bbbbb, err_tagi);
+        cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
+        err_all = err_tagi * TagStorage::Instance().GetObservationCount(i) + err_all;
+        count_all += TagStorage::Instance().GetObservationCount(i);
+        }
+        if (count_all > 0) {
+            err_avg = err_all / count_all;
+            cout << "平均观测误差为:" << err_avg << " m !!!" << endl;
+        } else {
+            cout << "没有Tag被观测到，无法计算平均误差。" << endl;
+        }
+        TagStorage::Instance().tagSave();
     }
-    err_avg = err_all / count_all;
-    cout << "平均观测误差为:" << err_avg << " m !!!" << endl;
-
 
 
     // Save camera trajectory
@@ -264,6 +307,24 @@ int main(int argc, char **argv)
     {
         SLAM.SaveTrajectoryEuRoC("CameraTrajectory.txt");
         SLAM.SaveKeyFrameTrajectoryEuRoC("KeyFrameTrajectory.txt");
+    }
+
+    if(!vTimesTrack.empty())
+    {
+        std::sort(vTimesTrack.begin(), vTimesTrack.end());
+        float totalTime = 0;
+        for(float time : vTimesTrack)
+        {
+            totalTime += time;
+        }
+        float meanTime = totalTime / vTimesTrack.size();
+        float medianTime = vTimesTrack[vTimesTrack.size() / 2];
+        
+        cout << "-------" << endl;
+        cout << "Tracking time statistics:" << endl;
+        cout << "Number of frames: " << vTimesTrack.size() << endl;
+        cout << "Mean tracking time: " << meanTime * 1000 << " ms" << endl;
+        cout << "Median tracking time: " << medianTime * 1000 << " ms" << endl;
     }
 
     return 0;
