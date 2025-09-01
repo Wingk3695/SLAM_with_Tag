@@ -175,7 +175,7 @@ Viewer.imageViewScale: 0.8
 # System.LoadAtlasFromFile: "moni_map"
 #
 # The store file is created from the current session, if a file with the same name exists it is deleted
-# System.SaveAtlasToFile: "OAK19A_map"
+System.SaveAtlasToFile: "OAK_map_6th"
 
 #--------------------------------------------------------------------------------------------
 # System Settings
