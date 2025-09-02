@@ -201,7 +201,10 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         //clock_t start = clock();
         cout << "Initialization of Atlas from file: " << mStrLoadAtlasFromFile << endl;
         bool isRead = LoadAtlas(FileType::BINARY_FILE);
-
+        cout << "[System] There are " << mpAtlas->CountMaps() << " maps in the atlas after loading." << endl;
+        // mpAtlas->ChangeMap(1); // change to the first map
+        cout << "[System] There are " << mpAtlas->GetAllKeyFrames().size() << " KFs in the current map after loading." << endl;
+        
         if(!isRead)
         {
             cout << "Error to load the file, please try with other session file or vocabulary file" << endl;
@@ -256,7 +259,17 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     //Initialize the Loop Closing thread and launch
     // mSensor!=MONOCULAR && mSensor!=IMU_MONOCULAR
-    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC); // mSensor!=MONOCULAR);
+
+    // 新增：读取地图大小阈值
+    int minKFsForLoc = 0;
+    node = fsSettings["System.MinMapSizeForLocalization"];
+    if(!node.empty() && node.isInt())
+    {
+        minKFsForLoc = static_cast<int>(node);
+        cout << "[System] INFO: Min KFs for localization mode set to " << minKFsForLoc << endl;
+    }
+
+    mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC, minKFsForLoc); // mSensor!=MONOCULAR);
     mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
 
     mpLoopCloser->SetSystem(this); // <--- 添加这一行，将System自身的指针传进去
@@ -929,6 +942,7 @@ void System::SaveTrajectoryEuRoC(const string &filename)
     int numMaxKFs = 0;
     Map* pBiggerMap;
     std::cout << "There are " << std::to_string(vpMaps.size()) << " maps in the atlas" << std::endl;
+    
     for(Map* pMap :vpMaps)
     {
         std::cout << "  Map " << std::to_string(pMap->GetId()) << " has " << std::to_string(pMap->GetAllKeyFrames().size()) << " KFs" << std::endl;
@@ -1736,7 +1750,7 @@ bool System::LoadAtlas(int type)
         mpAtlas->SetORBVocabulary(mpVocabulary);
         mpAtlas->PostLoad();
 
-        mpAtlas = new Atlas(0);
+        mpAtlas = new Atlas(0); //<-----------------为啥new一个？但是注释掉之后还用不了
 
         return true;
     }

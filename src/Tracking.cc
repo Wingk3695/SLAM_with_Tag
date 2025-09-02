@@ -2643,7 +2643,8 @@ void Tracking::MultiInitialization()
         }
 
         Verbose::PrintMess("New Map created with " + to_string(mpAtlas->MapPointsInMap()) + " points", Verbose::VERBOSITY_QUIET);
-
+        cout << "[Tracking] There are " << mpAtlas->CountMaps() << " maps in the atlas after loading." << endl;
+        
         mpLocalMapper->InsertKeyFrame(pKFini);
 
         mLastFrame = Frame(mCurrentFrame);

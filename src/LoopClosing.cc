@@ -36,11 +36,12 @@
 namespace ORB_SLAM3
 {
 
-LoopClosing::LoopClosing(Atlas *pAtlas, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale, const bool bActiveLC):
+LoopClosing::LoopClosing(Atlas *pAtlas, KeyFrameDatabase *pDB, ORBVocabulary *pVoc, const bool bFixScale, const bool bActiveLC, const int minKFsForLoc):
     mbResetRequested(false), mbResetActiveMapRequested(false), mbFinishRequested(false), mbFinished(true), mpAtlas(pAtlas),
     mpKeyFrameDB(pDB), mpORBVocabulary(pVoc), mpMatchedKF(NULL), mLastLoopKFid(0), mbRunningGBA(false), mbFinishedGBA(true),
     mbStopGBA(false), mpThreadGBA(NULL), mbFixScale(bFixScale), mnFullBAIdx(0), mnLoopNumCoincidences(0), mnMergeNumCoincidences(0),
-    mbLoopDetected(false), mbMergeDetected(false), mnLoopNumNotFound(0), mnMergeNumNotFound(0), mbActiveLC(bActiveLC), mpSystem(nullptr)
+    mbLoopDetected(false), mbMergeDetected(false), mnLoopNumNotFound(0), mnMergeNumNotFound(0), mbActiveLC(bActiveLC), mpSystem(nullptr),
+    mMinKFsForLocalization(minKFsForLoc)
 {
     mnCovisibilityConsistencyTh = 3;
     mpLastCurrentKF = static_cast<KeyFrame*>(NULL);
@@ -237,8 +238,19 @@ void LoopClosing::Run()
                     //调用system内定义的函数，在merge成功之后切换到定位模式
                     if(mpSystem)
                     {
-                        std::cout << "INFO: Map merge successful. Requesting to activate Localization Mode." << std::endl;
-                        mpSystem->RequestActivateLocalizationMode();
+                        // --- 新增逻辑：检查地图大小 ---
+                        long unsigned int currentMapSize = mpAtlas->KeyFramesInMap();
+                        if (mMinKFsForLocalization == 0 || currentMapSize >= mMinKFsForLocalization)
+                        {
+                            std::cout << "[LoopClosing] INFO: Map merge successful. Map size (" << currentMapSize << " KFs) is sufficient. Requesting to activate Localization Mode." << std::endl;
+                            mpSystem->RequestActivateLocalizationMode();
+                            std::cout << "[LoopClosing] There are " << std::to_string(mpAtlas->GetAllMaps().size()) << " maps in the atlas." << std::endl;
+                        }
+                        else
+                        {
+                            std::cout << "[LoopClosing] INFO: Map merge successful. Map size (" << currentMapSize << " KFs) is below threshold (" << mMinKFsForLocalization << "). Staying in mapping mode." << std::endl;
+                        }
+                        // --- 逻辑结束 ---
                     }
                     
                     vdPR_CurrentTime.push_back(mpCurrentKF->mTimeStamp);
@@ -1269,6 +1281,7 @@ void LoopClosing::MergeLocal()
     // Later, the elements of the current map will be transform to the new active map reference, in order to keep real time tracking
     Map* pCurrentMap = mpCurrentKF->GetMap();
     Map* pMergeMap = mpMergeMatchedKF->GetMap();
+    
 
     //std::cout << "Merge local, Active map: " << pCurrentMap->GetId() << std::endl;
     //std::cout << "Merge local, Non-Active map: " << pMergeMap->GetId() << std::endl;
@@ -1557,11 +1570,22 @@ void LoopClosing::MergeLocal()
             pCurrentMap->EraseMapPoint(pMPi);
         }
 
-        mpAtlas->ChangeMap(pMergeMap);
+
+        // 调整Atlas状态更新的顺序
+        std::cout << "[LoopClosing]: There are " << to_string(mpAtlas->GetAllMaps().size()) << " maps in the atlas before state change." << std::endl;
+
+        // 1. 先标记旧的地图为坏
         mpAtlas->SetMapBad(pCurrentMap);
+        std::cout << "Map with id " << pCurrentMap->GetId() << " marked as bad." << std::endl;
+
+        // 2. 然后切换到新的主地图
+        mpAtlas->ChangeMap(pMergeMap);
+        std::cout << "Active map changed to id: " << pMergeMap->GetId() << std::endl;
+
         pMergeMap->IncreaseChangeIndex();
+        std::cout << "[LoopClosing]: Now there are " << to_string(mpAtlas->GetAllMaps().size()) << " maps in the atlas." << std::endl;
         //TODO for debug
-        pMergeMap->ChangeId(pCurrentMap->GetId());
+        // pMergeMap->ChangeId(pCurrentMap->GetId());
 
         //std::cout << "[Merge]: merging maps finished" << std::endl;
     }

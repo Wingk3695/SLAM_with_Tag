@@ -65,7 +65,7 @@ public:
 
 public:
 
-    LoopClosing(Atlas* pAtlas, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale, const bool bActiveLC);
+    LoopClosing(Atlas* pAtlas, KeyFrameDatabase* pDB, ORBVocabulary* pVoc,const bool bFixScale, const bool bActiveLC, const int minKFsForLoc);
 
     void SetTracker(Tracking* pTracker);
 
@@ -268,6 +268,7 @@ protected:
     int mnCorrectionGBA;
 
     System* mpSystem;
+    int mMinKFsForLocalization;
 
     // To (de)activate LC
     bool mbActiveLC = true;

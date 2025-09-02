@@ -167,10 +167,12 @@ int main(int argc, char **argv)
     if (bEnableTagStorage)
     {
         cout << "[System] INFO: Tag save/load is ENABLED in settings." << endl;
+        bEnableTagStorage = true;
     }
     else
     {
         cout << "[System] INFO: Tag save/load is DISABLED in settings." << endl;
+        bEnableTagStorage = false;
     }
     // ===================================================================================
 
@@ -269,21 +271,23 @@ int main(int argc, char **argv)
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     SLAM.Shutdown();
 
-    if (bEnableTagStorage) // 修改：使用开关控制Tag的保存和统计逻辑
-    {
-        Eigen::Matrix3d aaaaa;
-        Eigen::Vector3d bbbbb;
-        double err_tagi;
-        double err_all = 0;
-        double count_all = 0;
-        double err_avg;
+    Eigen::Matrix3d aaaaa;
+    Eigen::Vector3d bbbbb;
+    double err_tagi;
+    double err_all = 0;
+    double count_all = 0;
+    double err_avg;
+
+    if (bEnableTagStorage) {
         TagStorage::Instance().tagCleanup();
+        TagStorage::Instance().tagLoad();
+
         cout << "-------" << endl;
         for (int i = 0; i <= 20; i++) {
-        TagStorage::Instance().tagRead(i, aaaaa, bbbbb, err_tagi);
-        cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
-        err_all = err_tagi * TagStorage::Instance().GetObservationCount(i) + err_all;
-        count_all += TagStorage::Instance().GetObservationCount(i);
+            TagStorage::Instance().tagRead(i, aaaaa, bbbbb, err_tagi);
+            cout << "tag" << i << "观测次数" << TagStorage::Instance().GetObservationCount(i) << endl;
+            err_all = err_tagi * TagStorage::Instance().GetObservationCount(i) + err_all;
+            count_all += TagStorage::Instance().GetObservationCount(i);
         }
         if (count_all > 0) {
             err_avg = err_all / count_all;
@@ -291,6 +295,7 @@ int main(int argc, char **argv)
         } else {
             cout << "没有Tag被观测到，无法计算平均误差。" << endl;
         }
+
         TagStorage::Instance().tagSave();
     }
 

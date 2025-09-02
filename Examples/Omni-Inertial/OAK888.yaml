@@ -184,9 +184,13 @@ System.LoadAtlasFromFile: "OAK_map_6th"
 # 1: true, 0: false.
 System.ActivateLocalizationAfterMerge: 1
 
+# Minimum number of KeyFrames in the map to activate localization mode after a merge.
+# Set to 0 to disable this check.
+System.MinMapSizeForLocalization: 50
+
 #--------------------------------------------------------------------------------------------
 # Tag Parameters
 #--------------------------------------------------------------------------------------------
 # Enable saving and loading of tag pose data.
 # 1: true, 0: false.
-Tag.Enable: 1
+Tag.Enable: 0

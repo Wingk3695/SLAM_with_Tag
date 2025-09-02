@@ -63,6 +63,7 @@ void Atlas::CreateNewMap()
         if(!mspMaps.empty() && mnLastInitKFidMap < mpCurrentMap->GetMaxKFid())
             mnLastInitKFidMap = mpCurrentMap->GetMaxKFid()+1; //The init KF is the next of current maximum
 
+        // From Gemini: 如果跟踪丢失了，新建地图的时候会在活跃的地图里面计算匹配，导致很大的计算量，这样设置可以节省一些资源
         mpCurrentMap->SetStoredMap();
         cout << "Stored map with ID: " << mpCurrentMap->GetId() << endl;
 
@@ -86,6 +87,27 @@ void Atlas::ChangeMap(Map* pMap)
 
     mpCurrentMap = pMap;
     mpCurrentMap->SetCurrentMap();
+}
+
+void Atlas::ChangeMap(int MapId)
+{
+    unique_lock<mutex> lock(mMutexAtlas);
+    for(Map* pMap_i : mspMaps)
+    {
+        if(pMap_i->GetId() == MapId)
+        {
+            cout << "Change to map with id: " << pMap_i->GetId() << endl;
+            if(mpCurrentMap){
+                mpCurrentMap->SetStoredMap();
+            }
+
+            mpCurrentMap = pMap_i;
+            mpCurrentMap->SetCurrentMap();
+            return;
+        }
+    }
+
+    cout << "The map with id: " << MapId << " does not exist" << endl;
 }
 
 unsigned long int Atlas::GetLastInitKFid()

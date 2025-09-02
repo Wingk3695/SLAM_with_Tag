@@ -83,6 +83,8 @@ time*
 Time*
 
 tag_poses.txt
+Camera*.txt
+KeyFrame*.txt
 
 !Thirdparty/DBoW2/Dutils/
 !Thirdparty/g2o/g2o/stuff/
